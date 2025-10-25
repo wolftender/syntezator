@@ -6,6 +6,9 @@ edition = "2024"
 [lib]
 crate-type = ["cdylib"]
 
+[lints.clippy]
+assign_op_pattern = "allow"
+
 [dependencies]
 chumsky = { version = "0.11.1", features = ["std", "bytes", "regex"], default-features = false }
 console_error_panic_hook = "0.1.7"

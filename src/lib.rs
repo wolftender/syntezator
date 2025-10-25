@@ -1,5 +1,8 @@
 use wasm_bindgen::prelude::*;
 
+#[allow(dead_code)]
+mod midi;
+
 #[wasm_bindgen(start)]
 pub fn main() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
