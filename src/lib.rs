@@ -1,4 +1,5 @@
 use wasm_bindgen::prelude::*;
+mod dom;
 
 use crate::{midi::MIDIFileData, synth::MidiSynth};
 
