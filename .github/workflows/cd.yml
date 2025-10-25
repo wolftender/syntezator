@@ -1,0 +1,71 @@
+name: cd
+
+on:
+  push:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install stable rust
+        run: rustup install stable
+
+      - name: Install wasm-pack
+        run: curl https://drager.github.io/wasm-pack/installer/init.sh -sSf | bash
+
+      - name: Print versions
+        run: |
+          cargo --version
+          rustc --version
+          cargo clippy --version
+          cargo fmt --version
+          wasm-pack --version
+
+      - name: Lint
+        run: cargo clippy --verbose -- -Dwarnings
+
+      - name: Formatting
+        run: cargo fmt --check --verbose
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Tests
+        run: cargo test --verbose
+
+      - name: Build wasm
+        run: wasm-pack build --out-dir pkg --target web
+
+      - name: Prepare artifact
+        run: |
+          mkdir public
+          mv index.html pkg public
+
+      - name: Upload Artifacts
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: 'public/'
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    permissions:
+      pages: write
+      id-token: write
+
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,0 +1,43 @@
+name: ci
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install stable rust
+        run: rustup install stable
+
+      - name: Install wasm-pack
+        run: curl https://drager.github.io/wasm-pack/installer/init.sh -sSf | bash
+
+      - name: Print versions
+        run: |
+          cargo --version
+          rustc --version
+          cargo clippy --version
+          cargo fmt --version
+          wasm-pack --version
+
+      - name: Lint
+        run: cargo clippy --verbose -- -Dwarnings
+
+      - name: Formatting
+        run: cargo fmt --check --verbose
+
+      - name: Tests
+        run: cargo test --verbose
+
+      - name: Build wasm
+        run: wasm-pack build --out-dir pkg --target web
