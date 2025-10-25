@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-chumsky = { version = "0.11.1", features = ["bytes", "regex"] }
+chumsky = { version = "0.11.1", features = ["std", "bytes", "regex"], default-features = false }
 console_error_panic_hook = "0.1.7"
 console_log = "1.0.0"
 log = "0.4.28"
