@@ -720,10 +720,10 @@ mod tests {
 
         assert_eq!(reader.read_range(3).unwrap(), &[0xFFu8, 0xEEu8, 0xDDu8]);
         assert_eq!(reader.read_range(2).unwrap(), &[0xCCu8, 0xBBu8]);
-        assert_eq!(reader.read_range(3).is_none(), true);
+        assert!(reader.read_range(3).is_none());
         assert_eq!(reader.read_range(1).unwrap(), &[0xAAu8]);
         assert_eq!(reader.read_range(1).unwrap(), &[0x99u8]);
-        assert_eq!(reader.read_range(1).is_none(), true);
+        assert!(reader.read_range(1).is_none());
     }
 
     #[test]
@@ -732,13 +732,13 @@ mod tests {
         let mut reader = BigEndianReader::new(&bytes);
 
         assert_eq!(reader.read_u32().unwrap(), 0xFFEEDDCCu32);
-        assert_eq!(reader.read_u32().is_none(), true);
+        assert!(reader.read_u32().is_none());
         assert_eq!(reader.read_u16().unwrap(), 0xBBAAu16);
-        assert_eq!(reader.read_u32().is_none(), true);
-        assert_eq!(reader.read_u16().is_none(), true);
+        assert!(reader.read_u32().is_none());
+        assert!(reader.read_u16().is_none());
         assert_eq!(reader.read_u8().unwrap(), 0x99u8);
-        assert_eq!(reader.read_u32().is_none(), true);
-        assert_eq!(reader.read_u32().is_none(), true);
+        assert!(reader.read_u32().is_none());
+        assert!(reader.read_u32().is_none());
     }
 
     #[test]
@@ -748,9 +748,9 @@ mod tests {
 
         assert_eq!(reader.read_u16().unwrap(), 0xFFEEu16);
         assert_eq!(reader.read_u16().unwrap(), 0xDDCCu16);
-        assert_eq!(reader.read_u16().is_none(), true);
+        assert!(reader.read_u16().is_none());
         assert_eq!(reader.read_u8().unwrap(), 0xBBu8);
-        assert_eq!(reader.read_u16().is_none(), true);
+        assert!(reader.read_u16().is_none());
     }
 
     #[test]
@@ -761,7 +761,7 @@ mod tests {
         assert_eq!(reader.read_u8().unwrap(), 0xFFu8);
         assert_eq!(reader.read_u8().unwrap(), 0xEEu8);
         assert_eq!(reader.read_u8().unwrap(), 0xDDu8);
-        assert_eq!(reader.read_u8().is_none(), true);
+        assert!(reader.read_u8().is_none());
     }
 
     #[test]
@@ -772,9 +772,6 @@ mod tests {
         let track = midi.tracks().first().unwrap();
         let last_event = track.events().last().unwrap();
 
-        assert!(matches!(
-            last_event,
-            MIDIEvent::Meta(MetaEvent::EndOfTrack { .. })
-        ))
+        assert!(matches!(last_event, MIDIEvent::Meta(MetaEvent::EndOfTrack)))
     }
 }
