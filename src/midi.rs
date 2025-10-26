@@ -598,8 +598,12 @@ impl MIDIFileData {
             Ok(TimeDivision::FramesPerSecond(smpte_value, clock_ticks))
         }
     }
+}
 
-    pub fn from(buffer: &[u8]) -> Result<Self, MIDIFileError> {
+impl TryFrom<&[u8]> for MIDIFileData {
+    type Error = MIDIFileError;
+
+    fn try_from(buffer: &[u8]) -> Result<Self, MIDIFileError> {
         let mut reader = BigEndianReader::new(buffer);
         if reader.read_range(4) != Some(MIDI_HEADER_CHUNK) {
             return Err(MIDIFileError::HeaderMismatch);
@@ -709,7 +713,7 @@ mod tests {
     #[test]
     fn test_midi_success() {
         let midi_bytes = include_bytes!("./assets/test.mid");
-        let midi = MIDIFileData::from(midi_bytes).unwrap();
+        let midi = MIDIFileData::try_from(&midi_bytes[..]).unwrap();
 
         let track = midi.tracks().first().unwrap();
         let last_event = track.events().last().unwrap();
