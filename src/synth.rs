@@ -3,7 +3,7 @@ use std::{collections::HashSet, time::Duration, vec};
 
 use crate::{
     midi::{ChannelEvent, MIDIEvent, MIDIFileData, MetaEvent, Tempo},
-    wave::{TriangleWave, Wave},
+    wave::{SineWave, Wave},
 };
 
 #[derive(Debug)]
@@ -135,16 +135,14 @@ impl MidiSynth {
                 buffer: &mut [f32],
                 active_notes: &HashSet<MidiNote>,
             ) {
-                for (sample_num, sample) in buffer
+                for (sample_num, sample) in buffer[sample_number..sample_number + sample_delta]
                     .iter_mut()
                     .enumerate()
-                    .skip(sample_number)
-                    .take(sample_delta)
                 {
                     let freq = active_notes
                         .iter()
                         .map(|n| {
-                            TriangleWave::new(n.frequency())
+                            SineWave::new(n.frequency())
                                 .value((sample_number + sample_num) as f32 / sample_rate as f32)
                         })
                         .sum::<f32>()
