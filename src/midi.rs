@@ -91,6 +91,7 @@ pub enum MIDIFileError {
     InvalidTrackEventType,
     UnsupportedEvent,
     InvalidMetaEvent,
+    UnexpectedMetaLength(u8, u32),
 }
 
 #[allow(clippy::upper_case_acronyms)]
@@ -159,9 +160,111 @@ pub enum ChannelEvent {
 }
 
 #[derive(Debug)]
+pub struct Tempo {
+    mpqn: u32,
+}
+
+#[derive(Debug)]
+pub enum MetaEvent {
+    SequenceNumber {
+        msb: u8,
+        lsb: u8,
+    },
+
+    TextEvent {
+        text: Vec<u8>,
+    },
+
+    CopyrightNotice {
+        text: Vec<u8>,
+    },
+
+    SequenceTrackName {
+        text: Vec<u8>,
+    },
+
+    InstrumentName {
+        text: Vec<u8>,
+    },
+
+    Lyrics {
+        text: Vec<u8>,
+    },
+
+    Marker {
+        text: Vec<u8>,
+    },
+
+    CuePoint {
+        text: Vec<u8>,
+    },
+
+    ChannelPrefix {
+        channel: u8,
+    },
+
+    EndOfTrack,
+
+    SetTempo {
+        tempo: Tempo,
+    },
+
+    SMPTEOffset {
+        hour: u8,
+        min: u8,
+        sec: u8,
+        fs: u8,
+        sub_fr: u8,
+    },
+
+    TimeSignature {
+        number: u8,
+        denom: u8,
+        metro: u8,
+        _32nds: u8,
+    },
+
+    KeySignature {
+        key: i8,
+        scale: u8,
+    },
+
+    UnknownEvent {
+        event_type: u8,
+        data: Vec<u8>,
+    },
+
+    SequencerSpecific {
+        data: Vec<u8>,
+    },
+}
+
+#[derive(Debug)]
 pub enum MIDIEvent {
     ChannelEvent(ChannelEvent),
-    EndOfTrack,
+    MetaEvent(MetaEvent),
+}
+
+impl Tempo {
+    pub fn from_mpqn(mpqn: u32) -> Self {
+        Self { mpqn }
+    }
+
+    pub fn from_bpm(bpm: u32) -> Self {
+        const MICROSECONDS_PER_MINUTE: u32 = 60000000;
+        let mpqn = MICROSECONDS_PER_MINUTE / bpm;
+
+        Self { mpqn }
+    }
+
+    pub fn as_bpm(&self) -> u32 {
+        const MICROSECONDS_PER_MINUTE: u32 = 60000000;
+        MICROSECONDS_PER_MINUTE / self.mpqn
+    }
+
+    pub fn as_mpqn(&self) -> u32 {
+        self.mpqn
+    }
 }
 
 impl MIDIEvent {
@@ -225,6 +328,178 @@ impl MIDIEvent {
             _ => return Err(MIDIFileError::InvalidTrackEventType),
         })
     }
+
+    fn from_meta_event(event_reader: &mut BigEndianReader) -> Result<Self, MIDIFileError> {
+        let event_type = event_reader
+            .read_u8()
+            .ok_or(MIDIFileError::InvalidMetaEvent)?;
+        let event_length = event_reader
+            .read_var_length()
+            .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+        match event_type {
+            0x00 => {
+                if event_length != 2 {
+                    return Err(MIDIFileError::UnexpectedMetaLength(
+                        event_type,
+                        event_length,
+                    ));
+                }
+
+                let msb = event_reader
+                    .read_u8()
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+                let lsb = event_reader
+                    .read_u8()
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+                Ok(MIDIEvent::MetaEvent(MetaEvent::SequenceNumber { msb, lsb }))
+            }
+
+            0x01 => Ok(MIDIEvent::MetaEvent(MetaEvent::TextEvent {
+                text: Vec::from(
+                    event_reader
+                        .read_range(event_length as usize)
+                        .ok_or(MIDIFileError::InvalidMetaEvent)?,
+                ),
+            })),
+
+            0x02 => Ok(MIDIEvent::MetaEvent(MetaEvent::CopyrightNotice {
+                text: Vec::from(
+                    event_reader
+                        .read_range(event_length as usize)
+                        .ok_or(MIDIFileError::InvalidMetaEvent)?,
+                ),
+            })),
+
+            0x03 => Ok(MIDIEvent::MetaEvent(MetaEvent::SequenceTrackName {
+                text: Vec::from(
+                    event_reader
+                        .read_range(event_length as usize)
+                        .ok_or(MIDIFileError::InvalidMetaEvent)?,
+                ),
+            })),
+
+            0x04 => Ok(MIDIEvent::MetaEvent(MetaEvent::InstrumentName {
+                text: Vec::from(
+                    event_reader
+                        .read_range(event_length as usize)
+                        .ok_or(MIDIFileError::InvalidMetaEvent)?,
+                ),
+            })),
+
+            0x05 => Ok(MIDIEvent::MetaEvent(MetaEvent::Lyrics {
+                text: Vec::from(
+                    event_reader
+                        .read_range(event_length as usize)
+                        .ok_or(MIDIFileError::InvalidMetaEvent)?,
+                ),
+            })),
+
+            0x06 => Ok(MIDIEvent::MetaEvent(MetaEvent::Marker {
+                text: Vec::from(
+                    event_reader
+                        .read_range(event_length as usize)
+                        .ok_or(MIDIFileError::InvalidMetaEvent)?,
+                ),
+            })),
+
+            0x07 => Ok(MIDIEvent::MetaEvent(MetaEvent::CuePoint {
+                text: Vec::from(
+                    event_reader
+                        .read_range(event_length as usize)
+                        .ok_or(MIDIFileError::InvalidMetaEvent)?,
+                ),
+            })),
+
+            0x20 => {
+                if event_length != 1 {
+                    return Err(MIDIFileError::UnexpectedMetaLength(
+                        event_type,
+                        event_length,
+                    ));
+                }
+
+                let channel = event_reader
+                    .read_u8()
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+                Ok(MIDIEvent::MetaEvent(MetaEvent::ChannelPrefix { channel }))
+            }
+
+            0x2F => {
+                if event_length != 0 {
+                    return Err(MIDIFileError::UnexpectedMetaLength(
+                        event_type,
+                        event_length,
+                    ));
+                }
+
+                Ok(MIDIEvent::MetaEvent(MetaEvent::EndOfTrack))
+            }
+
+            0x51 => {
+                if event_length != 3 {
+                    return Err(MIDIFileError::UnexpectedMetaLength(
+                        event_type,
+                        event_length,
+                    ));
+                }
+
+                let bytes = event_reader
+                    .read_range(3)
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+                let mpqn = (bytes[0] as u32) << 16 | (bytes[1] as u32) << 8 | (bytes[2] as u32);
+
+                Ok(MIDIEvent::MetaEvent(MetaEvent::SetTempo {
+                    tempo: Tempo::from_mpqn(mpqn),
+                }))
+            }
+
+            0x54 => {
+                if event_length != 5 {
+                    return Err(MIDIFileError::UnexpectedMetaLength(
+                        event_type,
+                        event_length,
+                    ));
+                }
+
+                let bytes = event_reader
+                    .read_range(5)
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+                Ok(MIDIEvent::MetaEvent(MetaEvent::SMPTEOffset {
+                    hour: bytes[0],
+                    min: bytes[1],
+                    sec: bytes[2],
+                    fs: bytes[3],
+                    sub_fr: bytes[4],
+                }))
+            }
+
+            0x7F => {
+                let bytes = event_reader
+                    .read_range(event_length as usize)
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+                Ok(MIDIEvent::MetaEvent(MetaEvent::SequencerSpecific {
+                    data: Vec::from(bytes),
+                }))
+            }
+
+            _ => {
+                let bytes = event_reader
+                    .read_range(event_length as usize)
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+                Ok(MIDIEvent::MetaEvent(MetaEvent::UnknownEvent {
+                    event_type,
+                    data: Vec::from(bytes),
+                }))
+            }
+        }
+    }
 }
 
 pub struct MIDITrack {
@@ -258,16 +533,12 @@ impl MIDITrack {
 
             match type_byte {
                 0xFF => {
-                    let event_type = track_reader
-                        .read_u8()
-                        .ok_or(MIDIFileError::InvalidMetaEvent)?;
-                    let event_length = track_reader
-                        .read_var_length()
-                        .ok_or(MIDIFileError::InvalidMetaEvent)?;
-                    let _ = track_reader.read_range(event_length as usize);
+                    let event = MIDIEvent::from_meta_event(&mut track_reader)?;
+                    let is_end_of_track =
+                        matches!(event, MIDIEvent::MetaEvent(MetaEvent::EndOfTrack));
 
-                    if event_type == 0x2F {
-                        events.push(MIDIEvent::EndOfTrack);
+                    events.push(event);
+                    if is_end_of_track {
                         break;
                     }
                 }
@@ -438,6 +709,14 @@ mod tests {
     #[test]
     fn test_midi_success() {
         let midi_bytes = include_bytes!("./assets/test.mid");
-        MIDIFileData::from(midi_bytes).unwrap();
+        let midi = MIDIFileData::from(midi_bytes).unwrap();
+
+        let track = midi.tracks().first().unwrap();
+        let last_event = track.events().last().unwrap();
+
+        assert!(matches!(
+            last_event,
+            MIDIEvent::MetaEvent(MetaEvent::EndOfTrack { .. })
+        ))
     }
 }
