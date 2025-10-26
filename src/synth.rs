@@ -128,70 +128,51 @@ impl MidiSynth {
 
             let mut active_notes = HashSet::<MidiNote>::new();
 
-            fn fill_notes(
-                sample_number: usize,
-                sample_delta: usize,
-                sample_rate: u32,
-                buffer: &mut [f32],
-                active_notes: &HashSet<MidiNote>,
-            ) {
-                for (sample_num, sample) in buffer[sample_number..sample_number + sample_delta]
-                    .iter_mut()
-                    .enumerate()
-                {
-                    let freq = active_notes
-                        .iter()
-                        .map(|n| {
-                            SineWave::new(n.frequency())
-                                .value((sample_number + sample_num) as f32 / sample_rate as f32)
-                        })
-                        .sum::<f32>()
-                        / (active_notes.len() as f32).max(1.0);
-
-                    *sample = freq;
-                }
-            }
-
             for event in track.events() {
                 match event {
                     MIDIEvent::Channel(channel_event) => {
                         let sample_delta =
                             (channel_event.delta_time() as f32 * samples_per_tick) as usize;
 
+                        // Fill notes from sample_number to sample_number + sample_delta with the currently active notes
+                        {
+                            let buffer = &mut buffers[track_index][self.meta.tracks[track_index]
+                                .channel_index(channel_event.channel())]
+                                [sample_number..sample_number + sample_delta];
+
+                            for (sample_num, sample) in buffer.iter_mut().enumerate() {
+                                let freq = active_notes
+                                    .iter()
+                                    .map(|n| {
+                                        SineWave::new(n.frequency()).value(
+                                            (sample_number + sample_num) as f32
+                                                / sample_rate as f32,
+                                        )
+                                    })
+                                    .sum::<f32>()
+                                    / (active_notes.len() as f32).max(1.0);
+
+                                *sample = freq;
+                            }
+                        }
+
                         match channel_event {
                             ChannelEvent::NoteOff {
                                 delta_time: _,
-                                channel,
+                                channel: _,
                                 note,
                                 // TODO: support velocity
                                 velocity: _,
                             } => {
-                                fill_notes(
-                                    sample_number,
-                                    sample_delta,
-                                    sample_rate,
-                                    &mut buffers[track_index]
-                                        [self.meta.tracks[track_index].channel_index(*channel)],
-                                    &active_notes,
-                                );
-
                                 active_notes.remove(&MidiNote::new(*note));
                             }
                             ChannelEvent::NoteOn {
                                 delta_time: _,
-                                channel,
+                                channel: _,
                                 note,
                                 // TODO: support velocity
                                 velocity: _,
                             } => {
-                                fill_notes(
-                                    sample_number,
-                                    sample_delta,
-                                    sample_rate,
-                                    &mut buffers[track_index]
-                                        [self.meta.tracks[track_index].channel_index(*channel)],
-                                    &active_notes,
-                                );
                                 active_notes.insert(MidiNote::new(*note));
                             }
                             ChannelEvent::NoteAftertouch { .. }
