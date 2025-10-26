@@ -8,7 +8,7 @@ use crate::{
 
 #[derive(Debug)]
 struct MidiTrackMeta {
-    /// Stores channel numbers. The index in this vector represents the contunuous channel index
+    /// Stores channel numbers. The index in this vector represents the continuous channel index
     channel_idx: Vec<u8>,
     duration: Duration,
 }
