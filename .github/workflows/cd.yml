@@ -45,7 +45,7 @@ jobs:
       - name: Prepare artifact
         run: |
           mkdir public
-          mv index.html pkg public
+          mv favicon.svg index.html pkg public
 
       - name: Upload Artifacts
         uses: actions/upload-pages-artifact@v3
