@@ -145,7 +145,7 @@ impl MidiSynth {
                         .iter()
                         .map(|n| {
                             TriangleWave::new(n.frequency())
-                                .value(sample_num as f32 / sample_rate as f32)
+                                .value((sample_number + sample_num) as f32 / sample_rate as f32)
                         })
                         .sum::<f32>()
                         / (active_notes.len() as f32).max(1.0);
