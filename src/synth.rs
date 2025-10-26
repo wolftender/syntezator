@@ -53,6 +53,14 @@ impl MidiMeta {
                     MIDIEvent::Meta(MetaEvent::SetTempo { tempo }) => {
                         tick_duration = data.time_division().tick_duration(*tempo);
                     }
+                    MIDIEvent::Meta(MetaEvent::CopyrightNotice { .. })
+                    | MIDIEvent::Meta(MetaEvent::SequenceTrackName { .. })
+                    | MIDIEvent::Meta(MetaEvent::InstrumentName { .. })
+                    | MIDIEvent::Meta(MetaEvent::Lyrics { .. })
+                    | MIDIEvent::Meta(MetaEvent::Marker { .. })
+                    | MIDIEvent::Meta(MetaEvent::CuePoint { .. }) => {
+                        // Ignored
+                    }
                     MIDIEvent::Meta(_) => {
                         log::warn!("Unhandled meta in meta collection event: {event:?}")
                     }
@@ -191,6 +199,14 @@ impl MidiSynth {
                         samples_per_tick = (sample_rate
                             * self.data.time_division().tick_duration(*tempo))
                         .as_secs_f32();
+                    }
+                    MIDIEvent::Meta(MetaEvent::CopyrightNotice { .. })
+                    | MIDIEvent::Meta(MetaEvent::SequenceTrackName { .. })
+                    | MIDIEvent::Meta(MetaEvent::InstrumentName { .. })
+                    | MIDIEvent::Meta(MetaEvent::Lyrics { .. })
+                    | MIDIEvent::Meta(MetaEvent::Marker { .. })
+                    | MIDIEvent::Meta(MetaEvent::CuePoint { .. }) => {
+                        // Ignored
                     }
                     MIDIEvent::Meta(_) => {
                         log::warn!("Unhandled meta in buffer creation event: {event:?}")
