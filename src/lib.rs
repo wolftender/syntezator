@@ -51,6 +51,8 @@ impl MidiPlayerState {
             audio_buffer.copy_to_channel(&flattened_buffers[channel as usize], channel as i32)?;
         }
 
+        self.audio_source.disconnect()?;
+        self.audio_source = self.audio_context.create_buffer_source()?;
         self.audio_source.set_buffer(Some(&audio_buffer));
         self.audio_source
             .connect_with_audio_node(&self.audio_context.destination())?;
