@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 const MIDI_HEADER_CHUNK: &[u8] = b"MThd";
 const MIDI_TRACK_CHUNK: &[u8] = b"MTrk";
 
@@ -98,13 +100,33 @@ pub enum MIDIFileError {
 pub enum SMPTE {
     _24,
     _25,
-    _29,
+    _29_97,
     _30,
 }
 
 pub enum TimeDivision {
     TicksPerBit(u16),
     FramesPerSecond(SMPTE, u16),
+}
+
+impl TimeDivision {
+    pub fn tick_duration(&self, tempo: Tempo) -> Duration {
+        match self {
+            TimeDivision::TicksPerBit(ticks) => {
+                Duration::from_micros(tempo.as_mpqn() as u64) / (*ticks as u32)
+            }
+            TimeDivision::FramesPerSecond(smpte, ticks) => {
+                let fps = match smpte {
+                    SMPTE::_24 => 24.0,
+                    SMPTE::_25 => 25.0,
+                    SMPTE::_29_97 => 29.97,
+                    SMPTE::_30 => 30.0,
+                };
+
+                Duration::from_secs(1) / (fps * (*ticks as f32)) as u32
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -159,8 +181,35 @@ pub enum ChannelEvent {
     },
 }
 
-#[derive(Debug)]
+impl ChannelEvent {
+    pub fn delta_time(&self) -> u32 {
+        match self {
+            Self::NoteOff { delta_time, .. } => *delta_time,
+            Self::NoteOn { delta_time, .. } => *delta_time,
+            Self::NoteAftertouch { delta_time, .. } => *delta_time,
+            Self::Controller { delta_time, .. } => *delta_time,
+            Self::ProgramChange { delta_time, .. } => *delta_time,
+            Self::ChannelAftertouch { delta_time, .. } => *delta_time,
+            Self::PitchBend { delta_time, .. } => *delta_time,
+        }
+    }
+
+    pub fn channel(&self) -> u8 {
+        match self {
+            Self::NoteOff { channel, .. } => *channel,
+            Self::NoteOn { channel, .. } => *channel,
+            Self::NoteAftertouch { channel, .. } => *channel,
+            Self::Controller { channel, .. } => *channel,
+            Self::ProgramChange { channel, .. } => *channel,
+            Self::ChannelAftertouch { channel, .. } => *channel,
+            Self::PitchBend { channel, .. } => *channel,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct Tempo {
+    /// Microseconds per quarter note
     mpqn: u32,
 }
 
@@ -241,8 +290,8 @@ pub enum MetaEvent {
 
 #[derive(Debug)]
 pub enum MIDIEvent {
-    ChannelEvent(ChannelEvent),
-    MetaEvent(MetaEvent),
+    Channel(ChannelEvent),
+    Meta(MetaEvent),
 }
 
 impl Tempo {
@@ -267,6 +316,12 @@ impl Tempo {
     }
 }
 
+impl Default for Tempo {
+    fn default() -> Self {
+        Self::from_bpm(120)
+    }
+}
+
 impl MIDIEvent {
     fn from_track_event(
         delta_time: u32,
@@ -276,49 +331,49 @@ impl MIDIEvent {
         param2: u8,
     ) -> Result<Self, MIDIFileError> {
         Ok(match event_type {
-            0x8 => MIDIEvent::ChannelEvent(ChannelEvent::NoteOff {
+            0x8 => MIDIEvent::Channel(ChannelEvent::NoteOff {
                 delta_time,
                 channel,
                 note: param1,
                 velocity: param2,
             }),
 
-            0x9 => MIDIEvent::ChannelEvent(ChannelEvent::NoteOn {
+            0x9 => MIDIEvent::Channel(ChannelEvent::NoteOn {
                 delta_time,
                 channel,
                 note: param1,
                 velocity: param2,
             }),
 
-            0xA => MIDIEvent::ChannelEvent(ChannelEvent::NoteAftertouch {
+            0xA => MIDIEvent::Channel(ChannelEvent::NoteAftertouch {
                 delta_time,
                 channel,
                 note: param1,
                 aftertouch: param2,
             }),
 
-            0xB => MIDIEvent::ChannelEvent(ChannelEvent::Controller {
+            0xB => MIDIEvent::Channel(ChannelEvent::Controller {
                 delta_time,
                 channel,
                 controller_number: param1,
                 controller_value: param2,
             }),
 
-            0xC => MIDIEvent::ChannelEvent(ChannelEvent::ProgramChange {
+            0xC => MIDIEvent::Channel(ChannelEvent::ProgramChange {
                 delta_time,
                 channel,
                 program_number: param1,
                 reserved: param2,
             }),
 
-            0xD => MIDIEvent::ChannelEvent(ChannelEvent::ChannelAftertouch {
+            0xD => MIDIEvent::Channel(ChannelEvent::ChannelAftertouch {
                 delta_time,
                 channel,
                 aftertouch: param1,
                 reserved: param2,
             }),
 
-            0xE => MIDIEvent::ChannelEvent(ChannelEvent::PitchBend {
+            0xE => MIDIEvent::Channel(ChannelEvent::PitchBend {
                 delta_time,
                 channel,
                 lsb: param1,
@@ -353,10 +408,10 @@ impl MIDIEvent {
                     .read_u8()
                     .ok_or(MIDIFileError::InvalidMetaEvent)?;
 
-                Ok(MIDIEvent::MetaEvent(MetaEvent::SequenceNumber { msb, lsb }))
+                Ok(MIDIEvent::Meta(MetaEvent::SequenceNumber { msb, lsb }))
             }
 
-            0x01 => Ok(MIDIEvent::MetaEvent(MetaEvent::TextEvent {
+            0x01 => Ok(MIDIEvent::Meta(MetaEvent::TextEvent {
                 text: Vec::from(
                     event_reader
                         .read_range(event_length as usize)
@@ -364,7 +419,7 @@ impl MIDIEvent {
                 ),
             })),
 
-            0x02 => Ok(MIDIEvent::MetaEvent(MetaEvent::CopyrightNotice {
+            0x02 => Ok(MIDIEvent::Meta(MetaEvent::CopyrightNotice {
                 text: Vec::from(
                     event_reader
                         .read_range(event_length as usize)
@@ -372,7 +427,7 @@ impl MIDIEvent {
                 ),
             })),
 
-            0x03 => Ok(MIDIEvent::MetaEvent(MetaEvent::SequenceTrackName {
+            0x03 => Ok(MIDIEvent::Meta(MetaEvent::SequenceTrackName {
                 text: Vec::from(
                     event_reader
                         .read_range(event_length as usize)
@@ -380,7 +435,7 @@ impl MIDIEvent {
                 ),
             })),
 
-            0x04 => Ok(MIDIEvent::MetaEvent(MetaEvent::InstrumentName {
+            0x04 => Ok(MIDIEvent::Meta(MetaEvent::InstrumentName {
                 text: Vec::from(
                     event_reader
                         .read_range(event_length as usize)
@@ -388,7 +443,7 @@ impl MIDIEvent {
                 ),
             })),
 
-            0x05 => Ok(MIDIEvent::MetaEvent(MetaEvent::Lyrics {
+            0x05 => Ok(MIDIEvent::Meta(MetaEvent::Lyrics {
                 text: Vec::from(
                     event_reader
                         .read_range(event_length as usize)
@@ -396,7 +451,7 @@ impl MIDIEvent {
                 ),
             })),
 
-            0x06 => Ok(MIDIEvent::MetaEvent(MetaEvent::Marker {
+            0x06 => Ok(MIDIEvent::Meta(MetaEvent::Marker {
                 text: Vec::from(
                     event_reader
                         .read_range(event_length as usize)
@@ -404,7 +459,7 @@ impl MIDIEvent {
                 ),
             })),
 
-            0x07 => Ok(MIDIEvent::MetaEvent(MetaEvent::CuePoint {
+            0x07 => Ok(MIDIEvent::Meta(MetaEvent::CuePoint {
                 text: Vec::from(
                     event_reader
                         .read_range(event_length as usize)
@@ -424,7 +479,7 @@ impl MIDIEvent {
                     .read_u8()
                     .ok_or(MIDIFileError::InvalidMetaEvent)?;
 
-                Ok(MIDIEvent::MetaEvent(MetaEvent::ChannelPrefix { channel }))
+                Ok(MIDIEvent::Meta(MetaEvent::ChannelPrefix { channel }))
             }
 
             0x2F => {
@@ -435,7 +490,7 @@ impl MIDIEvent {
                     ));
                 }
 
-                Ok(MIDIEvent::MetaEvent(MetaEvent::EndOfTrack))
+                Ok(MIDIEvent::Meta(MetaEvent::EndOfTrack))
             }
 
             0x51 => {
@@ -452,7 +507,7 @@ impl MIDIEvent {
 
                 let mpqn = (bytes[0] as u32) << 16 | (bytes[1] as u32) << 8 | (bytes[2] as u32);
 
-                Ok(MIDIEvent::MetaEvent(MetaEvent::SetTempo {
+                Ok(MIDIEvent::Meta(MetaEvent::SetTempo {
                     tempo: Tempo::from_mpqn(mpqn),
                 }))
             }
@@ -469,7 +524,7 @@ impl MIDIEvent {
                     .read_range(5)
                     .ok_or(MIDIFileError::InvalidMetaEvent)?;
 
-                Ok(MIDIEvent::MetaEvent(MetaEvent::SMPTEOffset {
+                Ok(MIDIEvent::Meta(MetaEvent::SMPTEOffset {
                     hour: bytes[0],
                     min: bytes[1],
                     sec: bytes[2],
@@ -483,7 +538,7 @@ impl MIDIEvent {
                     .read_range(event_length as usize)
                     .ok_or(MIDIFileError::InvalidMetaEvent)?;
 
-                Ok(MIDIEvent::MetaEvent(MetaEvent::SequencerSpecific {
+                Ok(MIDIEvent::Meta(MetaEvent::SequencerSpecific {
                     data: Vec::from(bytes),
                 }))
             }
@@ -493,7 +548,7 @@ impl MIDIEvent {
                     .read_range(event_length as usize)
                     .ok_or(MIDIFileError::InvalidMetaEvent)?;
 
-                Ok(MIDIEvent::MetaEvent(MetaEvent::UnknownEvent {
+                Ok(MIDIEvent::Meta(MetaEvent::UnknownEvent {
                     event_type,
                     data: Vec::from(bytes),
                 }))
@@ -534,8 +589,7 @@ impl MIDITrack {
             match type_byte {
                 0xFF => {
                     let event = MIDIEvent::from_meta_event(&mut track_reader)?;
-                    let is_end_of_track =
-                        matches!(event, MIDIEvent::MetaEvent(MetaEvent::EndOfTrack));
+                    let is_end_of_track = matches!(event, MIDIEvent::Meta(MetaEvent::EndOfTrack));
 
                     events.push(event);
                     if is_end_of_track {
@@ -589,7 +643,7 @@ impl MIDIFileData {
             let smpte_value = match (value & 0x7F00u16) >> 8 {
                 24 => SMPTE::_24,
                 25 => SMPTE::_25,
-                29 => SMPTE::_29,
+                29 => SMPTE::_29_97,
                 30 => SMPTE::_30,
                 _ => return Err(MIDIFileError::InvalidSMPTEValue),
             };
@@ -720,7 +774,7 @@ mod tests {
 
         assert!(matches!(
             last_event,
-            MIDIEvent::MetaEvent(MetaEvent::EndOfTrack { .. })
+            MIDIEvent::Meta(MetaEvent::EndOfTrack { .. })
         ))
     }
 }
