@@ -83,8 +83,8 @@ impl<'a> BigEndianReader<'a> {
 #[derive(Debug, Clone, Copy)]
 pub enum MIDIFileError {
     HeaderMismatch,
+    InvalidHeader,
     HeaderSizeMismatch,
-    UnsupportedType,
     InvalidTrackCount,
     InvalidTimeDivision,
     InvalidSMPTEValue,
@@ -667,9 +667,7 @@ impl TryFrom<&[u8]> for MIDIFileData {
             return Err(MIDIFileError::HeaderSizeMismatch);
         }
 
-        if reader.read_u16() != Some(0u16) {
-            return Err(MIDIFileError::UnsupportedType);
-        }
+        let _format_type = reader.read_u16().ok_or(MIDIFileError::InvalidHeader)?;
 
         let num_tracks = reader.read_u16().ok_or(MIDIFileError::InvalidTrackCount)?;
         let time_division = Self::parse_time_division(
