@@ -3,7 +3,6 @@ use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    dom::{PlaybackControls, SynthKind, SynthKindOption, WaveKind, WaveKindOption},
     midi::MIDIFileData,
     synth::MidiMetadata,
     wave::{SawtoothWave, SineWave, SquareWave, TriangleWave, Wave},
@@ -40,18 +39,18 @@ impl MidiPlayerState {
     pub fn set_buffer(
         &mut self,
         midi_data: MIDIFileData,
-        synth_kind: SynthKindOption,
-        wave_kind: WaveKindOption,
+        synth_kind: dom::SynthKindOption,
+        wave_kind: dom::WaveKindOption,
     ) -> Result<(), JsValue> {
         let wave: &dyn Wave = match wave_kind {
-            WaveKindOption::Sine => &SineWave,
-            WaveKindOption::Square => &SquareWave,
-            WaveKindOption::Sawtooth => &SawtoothWave,
-            WaveKindOption::Triangle => &TriangleWave,
+            dom::WaveKindOption::Sine => &SineWave,
+            dom::WaveKindOption::Square => &SquareWave,
+            dom::WaveKindOption::Sawtooth => &SawtoothWave,
+            dom::WaveKindOption::Triangle => &TriangleWave,
         };
 
         match synth_kind {
-            SynthKindOption::Raw => {
+            dom::SynthKindOption::Raw => {
                 let synth = synth::raw::MidiSynth::new(midi_data);
                 let sample_rate = self.audio_context.sample_rate();
                 let (buffer_length, buffers) = synth.create_buffer(sample_rate as u32, wave);
@@ -76,7 +75,7 @@ impl MidiPlayerState {
                     .connect_with_audio_node(&self.audio_context.destination())?;
                 self.audio_source.start()?;
             }
-            SynthKindOption::WebAudio => {
+            dom::SynthKindOption::WebAudio => {
                 let synth = synth::web_audio::MidiSynth::new(midi_data);
                 synth.schedule(&self.audio_context, wave, &self.audio_context.destination())?;
                 // TODO: remove existing playback
@@ -100,10 +99,10 @@ pub fn main() -> Result<(), JsValue> {
     let player_state = Rc::new(RefCell::new(MidiPlayerState::new(audio_context)?));
     let player_state_c = player_state.clone();
 
-    let synth_kind = SynthKind::new(&document);
-    let wave_kind = WaveKind::new(&document);
+    let synth_kind = dom::SynthKind::new(&document);
+    let wave_kind = dom::WaveKind::new(&document);
 
-    let playback_controls = PlaybackControls::new(&document);
+    let playback_controls = dom::PlaybackControls::new(&document);
     playback_controls.on_play_pause(move |is_play| {
         // TODO: implement play/pause
     });
