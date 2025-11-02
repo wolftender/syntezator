@@ -572,6 +572,8 @@ impl MIDITrack {
         let mut track_reader = BigEndianReader::new(track_buffer);
         let mut events = vec![];
 
+        let mut running_status: Option<(u8, u8)> = None;
+
         loop {
             let delta_time = track_reader
                 .read_var_length()
@@ -580,17 +582,25 @@ impl MIDITrack {
             let type_byte = track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)?;
 
             match type_byte {
-                0xFF => {
-                    let event = MIDIEvent::from_meta_event(&mut track_reader)?;
-                    let is_end_of_track = matches!(event, MIDIEvent::Meta(MetaEvent::EndOfTrack));
+                0x00..0x80 => {
+                    // channel event with a running status
+                    let (event_type, channel) =
+                        running_status.ok_or(MIDIFileError::InvalidEvent)?;
+                    let mut param1 = Some(type_byte);
+
+                    let event =
+                        MIDIEvent::from_track_event(delta_time, event_type, channel, || {
+                            if let Some(v) = param1.take() {
+                                Ok(v)
+                            } else {
+                                track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)
+                            }
+                        })?;
 
                     events.push(event);
-                    if is_end_of_track {
-                        break;
-                    }
                 }
-                0xF0 => return Err(MIDIFileError::UnsupportedEvent),
-                type_byte => {
+                0x80..=0xEF => {
+                    // channel event
                     let event_type = (0xf0u8 & type_byte) >> 4;
                     let channel = 0x0fu8 & type_byte;
 
@@ -600,6 +610,26 @@ impl MIDITrack {
                         })?;
 
                     events.push(event);
+                    running_status = Some((event_type, channel));
+                }
+                0xF0..=0xF7 => {
+                    // sysex event
+                    return Err(MIDIFileError::UnsupportedEvent);
+                }
+                0xF8..=0xFE => {
+                    // real-time event
+                    return Err(MIDIFileError::UnsupportedEvent);
+                }
+                0xFF => {
+                    // meta event
+                    let event = MIDIEvent::from_meta_event(&mut track_reader)?;
+                    let is_end_of_track = matches!(event, MIDIEvent::Meta(MetaEvent::EndOfTrack));
+
+                    events.push(event);
+                    if is_end_of_track {
+                        break;
+                    }
+                    running_status = None;
                 }
             }
         }
