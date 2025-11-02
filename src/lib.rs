@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use wasm_bindgen::prelude::*;
 
-use crate::{midi::MIDIFileData, synth::MidiSynth};
+use crate::midi::MIDIFileData;
 mod dom;
 
 #[allow(dead_code)]
@@ -35,7 +35,7 @@ impl MidiPlayerState {
     pub fn set_buffer(&mut self, midi_data: MIDIFileData) -> Result<(), JsValue> {
         log::info!("received midi file");
 
-        let synth = MidiSynth::new(midi_data);
+        let synth = synth::raw::MidiSynth::new(midi_data);
         let sample_rate = self.audio_context.sample_rate();
         let (buffer_length, buffers) = synth.create_buffer(sample_rate as u32);
 
