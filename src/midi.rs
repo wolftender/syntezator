@@ -582,7 +582,7 @@ impl MIDITrack {
             let type_byte = track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)?;
 
             match type_byte {
-                0x00..0x80 => {
+                0x00..=0x7F => {
                     // channel event with a running status
                     let (event_type, channel) =
                         running_status.ok_or(MIDIFileError::InvalidEvent)?;
@@ -691,6 +691,10 @@ impl MIDIFileData {
             let clock_ticks = value & 0x00FFu16;
             Ok(TimeDivision::FramesPerSecond(smpte_value, clock_ticks))
         }
+    }
+
+    pub fn format(&self) -> &MIDIFormat {
+        &self.format
     }
 }
 
