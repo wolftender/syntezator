@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{num::NonZeroU8, time::Duration};
 
 const MIDI_HEADER_CHUNK: &[u8] = b"MThd";
 const MIDI_TRACK_CHUNK: &[u8] = b"MTrk";
@@ -231,6 +231,19 @@ pub struct Tempo {
     mpqn: u32,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Scale {
+    Major,
+    Minor,
+}
+
+#[derive(Debug, Clone)]
+pub enum Key {
+    Flats(NonZeroU8),
+    C,
+    Sharps(NonZeroU8),
+}
+
 #[derive(Debug)]
 pub enum MetaEvent {
     SequenceNumber {
@@ -292,8 +305,8 @@ pub enum MetaEvent {
     },
 
     KeySignature {
-        key: i8,
-        scale: u8,
+        key: Key,
+        scale: Scale,
     },
 
     UnknownEvent {
@@ -453,6 +466,39 @@ impl MetaEvent {
                     sec: bytes[2],
                     fs: bytes[3],
                     sub_fr: bytes[4],
+                })
+            }
+
+            0x59 => {
+                if event_length != 2 {
+                    return Err(MIDIFileError::UnexpectedMetaLength(
+                        event_type,
+                        event_length,
+                    ));
+                }
+
+                let bytes = event_reader
+                    .read_range(2)
+                    .ok_or(MIDIFileError::InvalidMetaEvent)?;
+
+                Ok(MetaEvent::KeySignature {
+                    key: match bytes[0] {
+                        0 => Key::C,
+                        sharps @ 1..=7 => Key::Sharps(NonZeroU8::new(sharps).unwrap()),
+                        flats_byte @ 0xF9..=0xFF => {
+                            Key::Flats(NonZeroU8::new(0xFF - flats_byte + 1).unwrap())
+                        }
+                        _ => {
+                            return Err(MIDIFileError::InvalidMetaEvent);
+                        }
+                    },
+                    scale: match bytes[1] {
+                        0 => Scale::Major,
+                        1 => Scale::Minor,
+                        _ => {
+                            return Err(MIDIFileError::InvalidMetaEvent);
+                        }
+                    },
                 })
             }
 
