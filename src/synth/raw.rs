@@ -1,102 +1,24 @@
 use core::f32;
 use std::{
     collections::{HashMap, HashSet},
-    time::Duration,
     vec,
 };
 
 use crate::{
     midi::{ChannelEventKind, MIDIEventKind, MIDIFileData, MetaEvent, Tempo},
-    synth::MidiNote,
+    synth::{MidiMetadata, MidiNote},
     wave::Wave,
 };
 
-#[derive(Debug)]
-struct MidiTrackMeta {
-    /// Stores channel numbers. The index in this vector represents the continuous channel index
-    channel_idx: Vec<u8>,
-    duration: Duration,
-}
-
-impl MidiTrackMeta {
-    fn new(channel_idx: Vec<u8>, duration: Duration) -> Self {
-        Self {
-            channel_idx,
-            duration,
-        }
-    }
-
-    fn channel_index(&self, channel: u8) -> usize {
-        self.channel_idx
-            .iter()
-            .position(|&ch| ch == channel)
-            .expect("channel is not part of this track")
-    }
-}
-
-#[derive(Debug)]
-struct MidiMeta {
-    tracks: Vec<MidiTrackMeta>,
-}
-
-impl MidiMeta {
-    fn new(data: &MIDIFileData) -> Self {
-        let mut tracks = vec![];
-        for track in data.tracks() {
-            let mut tick_duration = data.time_division().tick_duration(Tempo::default());
-
-            let mut channels = HashSet::new();
-            let mut duration = Duration::from_secs(0);
-
-            for event in track.events() {
-                duration += tick_duration * event.delta_time();
-
-                match event.kind() {
-                    MIDIEventKind::Channel(channel_event) => {
-                        channels.insert(channel_event.channel());
-                    }
-                    MIDIEventKind::Meta(MetaEvent::EndOfTrack) => break,
-                    MIDIEventKind::Meta(MetaEvent::SetTempo { tempo }) => {
-                        tick_duration = data.time_division().tick_duration(*tempo);
-                    }
-                    MIDIEventKind::Meta(MetaEvent::CopyrightNotice { .. })
-                    | MIDIEventKind::Meta(MetaEvent::SequenceTrackName { .. })
-                    | MIDIEventKind::Meta(MetaEvent::InstrumentName { .. })
-                    | MIDIEventKind::Meta(MetaEvent::Lyrics { .. })
-                    | MIDIEventKind::Meta(MetaEvent::Marker { .. })
-                    | MIDIEventKind::Meta(MetaEvent::CuePoint { .. }) => {
-                        // Ignored
-                    }
-                    MIDIEventKind::Meta(_) => {
-                        log::warn!("Unhandled meta in meta collection event: {event:?}")
-                    }
-                }
-            }
-
-            tracks.push(MidiTrackMeta::new(channels.into_iter().collect(), duration));
-        }
-
-        Self { tracks }
-    }
-
-    fn total_duration(&self) -> Duration {
-        self.tracks
-            .iter()
-            .map(|track| track.duration)
-            .max()
-            .unwrap_or_default()
-    }
-}
-
 pub struct MidiSynth {
     data: MIDIFileData,
-    meta: MidiMeta,
+    meta: MidiMetadata,
 }
 
 impl MidiSynth {
     pub fn new(data: MIDIFileData) -> Self {
         Self {
-            meta: MidiMeta::new(&data),
+            meta: MidiMetadata::new(&data),
             data,
         }
     }
