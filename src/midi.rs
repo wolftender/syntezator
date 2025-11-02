@@ -90,7 +90,7 @@ pub enum MIDIFileError {
     InvalidSMPTEValue,
     InvalidTrackChunk,
     InvalidEvent,
-    InvalidTrackEventType,
+    InvalidTrackEventType(u8),
     UnsupportedEvent,
     InvalidMetaEvent,
     UnexpectedMetaLength(u8, u32),
@@ -163,14 +163,12 @@ pub enum ChannelEvent {
         delta_time: u32,
         channel: u8,
         program_number: u8,
-        reserved: u8,
     },
 
     ChannelAftertouch {
         delta_time: u32,
         channel: u8,
         aftertouch: u8,
-        reserved: u8,
     },
 
     PitchBend {
@@ -327,60 +325,57 @@ impl MIDIEvent {
         delta_time: u32,
         event_type: u8,
         channel: u8,
-        param1: u8,
-        param2: u8,
+        mut read_param: impl FnMut() -> Result<u8, MIDIFileError>,
     ) -> Result<Self, MIDIFileError> {
         Ok(match event_type {
             0x8 => MIDIEvent::Channel(ChannelEvent::NoteOff {
                 delta_time,
                 channel,
-                note: param1,
-                velocity: param2,
+                note: read_param()?,
+                velocity: read_param()?,
             }),
 
             0x9 => MIDIEvent::Channel(ChannelEvent::NoteOn {
                 delta_time,
                 channel,
-                note: param1,
-                velocity: param2,
+                note: read_param()?,
+                velocity: read_param()?,
             }),
 
             0xA => MIDIEvent::Channel(ChannelEvent::NoteAftertouch {
                 delta_time,
                 channel,
-                note: param1,
-                aftertouch: param2,
+                note: read_param()?,
+                aftertouch: read_param()?,
             }),
 
             0xB => MIDIEvent::Channel(ChannelEvent::Controller {
                 delta_time,
                 channel,
-                controller_number: param1,
-                controller_value: param2,
+                controller_number: read_param()?,
+                controller_value: read_param()?,
             }),
 
             0xC => MIDIEvent::Channel(ChannelEvent::ProgramChange {
                 delta_time,
                 channel,
-                program_number: param1,
-                reserved: param2,
+                program_number: read_param()?,
             }),
 
             0xD => MIDIEvent::Channel(ChannelEvent::ChannelAftertouch {
                 delta_time,
                 channel,
-                aftertouch: param1,
-                reserved: param2,
+                aftertouch: read_param()?,
             }),
 
             0xE => MIDIEvent::Channel(ChannelEvent::PitchBend {
                 delta_time,
                 channel,
-                lsb: param1,
-                msb: param2,
+                lsb: read_param()?,
+                msb: read_param()?,
             }),
 
-            _ => return Err(MIDIFileError::InvalidTrackEventType),
+            _ => return Err(MIDIFileError::InvalidTrackEventType(event_type)),
         })
     }
 
@@ -601,12 +596,10 @@ impl MIDITrack {
                     let event_type = (0xf0u8 & type_byte) >> 4;
                     let channel = 0x0fu8 & type_byte;
 
-                    let param1 = track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)?;
-                    let param2 = track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)?;
-
-                    let event = MIDIEvent::from_track_event(
-                        delta_time, event_type, channel, param1, param2,
-                    )?;
+                    let event =
+                        MIDIEvent::from_track_event(delta_time, event_type, channel, || {
+                            track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)
+                        })?;
 
                     events.push(event);
                 }
