@@ -530,8 +530,6 @@ impl Default for Tempo {
     }
 }
 
-impl ChannelEvent {}
-
 pub struct MIDITrack {
     events: Vec<MIDIEvent>,
 }

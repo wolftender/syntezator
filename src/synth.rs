@@ -159,7 +159,7 @@ impl MidiSynth {
                                     )
                                 })
                                 .sum::<f32>()
-                                / (active_notes.len() as f32).max(1.0);
+                                / (notes.len() as f32).max(1.0);
 
                             *sample = freq;
                         }
