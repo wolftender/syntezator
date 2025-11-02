@@ -1,8 +1,12 @@
 use core::f32;
-use std::{collections::HashSet, time::Duration, vec};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+    vec,
+};
 
 use crate::{
-    midi::{ChannelEvent, MIDIEvent, MIDIFileData, MetaEvent, Tempo},
+    midi::{ChannelEventKind, MIDIEventKind, MIDIFileData, MetaEvent, Tempo},
     wave::{SineWave, Wave},
 };
 
@@ -44,24 +48,25 @@ impl MidiMeta {
             let mut duration = Duration::from_secs(0);
 
             for event in track.events() {
-                match event {
-                    MIDIEvent::Channel(channel_event) => {
+                duration += tick_duration * event.delta_time();
+
+                match event.kind() {
+                    MIDIEventKind::Channel(channel_event) => {
                         channels.insert(channel_event.channel());
-                        duration += tick_duration * channel_event.delta_time();
                     }
-                    MIDIEvent::Meta(MetaEvent::EndOfTrack) => break,
-                    MIDIEvent::Meta(MetaEvent::SetTempo { tempo }) => {
+                    MIDIEventKind::Meta(MetaEvent::EndOfTrack) => break,
+                    MIDIEventKind::Meta(MetaEvent::SetTempo { tempo }) => {
                         tick_duration = data.time_division().tick_duration(*tempo);
                     }
-                    MIDIEvent::Meta(MetaEvent::CopyrightNotice { .. })
-                    | MIDIEvent::Meta(MetaEvent::SequenceTrackName { .. })
-                    | MIDIEvent::Meta(MetaEvent::InstrumentName { .. })
-                    | MIDIEvent::Meta(MetaEvent::Lyrics { .. })
-                    | MIDIEvent::Meta(MetaEvent::Marker { .. })
-                    | MIDIEvent::Meta(MetaEvent::CuePoint { .. }) => {
+                    MIDIEventKind::Meta(MetaEvent::CopyrightNotice { .. })
+                    | MIDIEventKind::Meta(MetaEvent::SequenceTrackName { .. })
+                    | MIDIEventKind::Meta(MetaEvent::InstrumentName { .. })
+                    | MIDIEventKind::Meta(MetaEvent::Lyrics { .. })
+                    | MIDIEventKind::Meta(MetaEvent::Marker { .. })
+                    | MIDIEventKind::Meta(MetaEvent::CuePoint { .. }) => {
                         // Ignored
                     }
-                    MIDIEvent::Meta(_) => {
+                    MIDIEventKind::Meta(_) => {
                         log::warn!("Unhandled meta in meta collection event: {event:?}")
                     }
                 }
@@ -134,84 +139,85 @@ impl MidiSynth {
                 * self.data.time_division().tick_duration(Tempo::default()))
             .as_secs_f32();
 
-            let mut active_notes = HashSet::<MidiNote>::new();
+            let mut active_notes = HashMap::<usize, HashSet<MidiNote>>::new();
 
             for event in track.events() {
-                match event {
-                    MIDIEvent::Channel(channel_event) => {
-                        let sample_delta =
-                            (channel_event.delta_time() as f32 * samples_per_tick) as usize;
+                let sample_delta = (event.delta_time() as f32 * samples_per_tick) as usize;
 
-                        // Fill notes from sample_number to sample_number + sample_delta with the currently active notes
-                        {
-                            let buffer = &mut buffers[track_index][self.meta.tracks[track_index]
-                                .channel_index(channel_event.channel())]
-                                [sample_number..sample_number + sample_delta];
+                // Fill notes from sample_number to sample_number + sample_delta with the currently active notes
+                {
+                    for (channel_buffer_idx, notes) in &active_notes {
+                        let buffer = &mut buffers[track_index][*channel_buffer_idx]
+                            [sample_number..sample_number + sample_delta];
 
-                            for (sample_num, sample) in buffer.iter_mut().enumerate() {
-                                let freq = active_notes
-                                    .iter()
-                                    .map(|n| {
-                                        SineWave::new(n.frequency()).value(
-                                            (sample_number + sample_num) as f32
-                                                / sample_rate as f32,
-                                        )
-                                    })
-                                    .sum::<f32>()
-                                    / (active_notes.len() as f32).max(1.0);
+                        for (sample_num, sample) in buffer.iter_mut().enumerate() {
+                            let freq = notes
+                                .iter()
+                                .map(|n| {
+                                    SineWave::new(n.frequency()).value(
+                                        (sample_number + sample_num) as f32 / sample_rate as f32,
+                                    )
+                                })
+                                .sum::<f32>()
+                                / (active_notes.len() as f32).max(1.0);
 
-                                *sample = freq;
-                            }
+                            *sample = freq;
                         }
+                    }
+                }
 
-                        match channel_event {
-                            ChannelEvent::NoteOff {
-                                delta_time: _,
-                                channel: _,
+                match event.kind() {
+                    MIDIEventKind::Channel(channel_event) => {
+                        let channel_buffer_idx =
+                            self.meta.tracks[track_index].channel_index(channel_event.channel());
+
+                        match channel_event.kind() {
+                            ChannelEventKind::NoteOff {
                                 note,
                                 // TODO: support velocity
                                 velocity: _,
                             } => {
-                                active_notes.remove(&MidiNote::new(*note));
+                                if let Some(notes) = active_notes.get_mut(&channel_buffer_idx) {
+                                    notes.remove(&MidiNote::new(*note));
+                                }
                             }
-                            ChannelEvent::NoteOn {
-                                delta_time: _,
-                                channel: _,
+                            ChannelEventKind::NoteOn {
                                 note,
                                 // TODO: support velocity
                                 velocity: _,
                             } => {
-                                active_notes.insert(MidiNote::new(*note));
+                                let notes = active_notes.entry(channel_buffer_idx).or_default();
+                                notes.insert(MidiNote::new(*note));
                             }
-                            ChannelEvent::NoteAftertouch { .. }
-                            | ChannelEvent::Controller { .. }
-                            | ChannelEvent::ProgramChange { .. }
-                            | ChannelEvent::ChannelAftertouch { .. }
-                            | ChannelEvent::PitchBend { .. } => {
+                            ChannelEventKind::NoteAftertouch { .. }
+                            | ChannelEventKind::Controller { .. }
+                            | ChannelEventKind::ProgramChange { .. }
+                            | ChannelEventKind::ChannelAftertouch { .. }
+                            | ChannelEventKind::PitchBend { .. } => {
                                 log::warn!("Unhandled channel event: {channel_event:?}")
                             }
                         }
-
-                        sample_number += sample_delta;
                     }
-                    MIDIEvent::Meta(MetaEvent::EndOfTrack) => break,
-                    MIDIEvent::Meta(MetaEvent::SetTempo { tempo }) => {
+                    MIDIEventKind::Meta(MetaEvent::EndOfTrack) => break,
+                    MIDIEventKind::Meta(MetaEvent::SetTempo { tempo }) => {
                         samples_per_tick = (sample_rate
                             * self.data.time_division().tick_duration(*tempo))
                         .as_secs_f32();
                     }
-                    MIDIEvent::Meta(MetaEvent::CopyrightNotice { .. })
-                    | MIDIEvent::Meta(MetaEvent::SequenceTrackName { .. })
-                    | MIDIEvent::Meta(MetaEvent::InstrumentName { .. })
-                    | MIDIEvent::Meta(MetaEvent::Lyrics { .. })
-                    | MIDIEvent::Meta(MetaEvent::Marker { .. })
-                    | MIDIEvent::Meta(MetaEvent::CuePoint { .. }) => {
+                    MIDIEventKind::Meta(MetaEvent::CopyrightNotice { .. })
+                    | MIDIEventKind::Meta(MetaEvent::SequenceTrackName { .. })
+                    | MIDIEventKind::Meta(MetaEvent::InstrumentName { .. })
+                    | MIDIEventKind::Meta(MetaEvent::Lyrics { .. })
+                    | MIDIEventKind::Meta(MetaEvent::Marker { .. })
+                    | MIDIEventKind::Meta(MetaEvent::CuePoint { .. }) => {
                         // Ignored
                     }
-                    MIDIEvent::Meta(_) => {
+                    MIDIEventKind::Meta(_) => {
                         log::warn!("Unhandled meta in buffer creation event: {event:?}")
                     }
                 }
+
+                sample_number += sample_delta;
             }
         }
 

@@ -215,6 +215,14 @@ impl ChannelEvent {
             },
         })
     }
+
+    pub fn channel(&self) -> u8 {
+        self.channel
+    }
+
+    pub fn kind(&self) -> &ChannelEventKind {
+        &self.kind
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -478,9 +486,20 @@ pub enum MIDIEventKind {
     Meta(MetaEvent),
 }
 
+#[derive(Debug)]
 pub struct MIDIEvent {
     delta_time: u32,
     kind: MIDIEventKind,
+}
+
+impl MIDIEvent {
+    pub fn delta_time(&self) -> u32 {
+        self.delta_time
+    }
+
+    pub fn kind(&self) -> &MIDIEventKind {
+        &self.kind
+    }
 }
 
 impl Tempo {
