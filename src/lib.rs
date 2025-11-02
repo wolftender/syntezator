@@ -104,6 +104,12 @@ pub fn main() -> Result<(), JsValue> {
     let wave_kind = WaveKind::new(&document);
 
     let playback_controls = PlaybackControls::new(&document);
+    playback_controls.on_play_pause(move |is_play| {
+        // TODO: implement play/pause
+    });
+    playback_controls.on_position_change(move |position| {
+        // TODO: implement seeking
+    });
 
     let _midi = dom::MidiInput::new(
         &document,

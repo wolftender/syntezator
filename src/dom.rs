@@ -9,8 +9,6 @@ use crate::midi;
 #[allow(dead_code)]
 pub struct MidiInput {
     element: web_sys::HtmlInputElement,
-    midi_cb: Rc<RefCell<dyn FnMut(midi::MIDIFileData)>>,
-    error_cb: Rc<RefCell<dyn FnMut(midi::MIDIFileError)>>,
 }
 
 impl MidiInput {
@@ -27,8 +25,6 @@ impl MidiInput {
 
         let midi_cb = Rc::new(RefCell::new(midi_cb));
         let error_cb = Rc::new(RefCell::new(error_cb));
-        let midi_cb_c = midi_cb.clone();
-        let error_cb_c = error_cb.clone();
 
         let on_change_closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
             let input: web_sys::HtmlInputElement = event
@@ -39,8 +35,8 @@ impl MidiInput {
 
             if let Some(file) = input.files().and_then(|f| f.item(0)) {
                 let reader = FileReader::new().expect("failed to create file reader");
-                let midi_cb_c = midi_cb_c.clone();
-                let error_cb_c = error_cb_c.clone();
+                let midi_cb_c = midi_cb.clone();
+                let error_cb_c = error_cb.clone();
 
                 let on_load_closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
                     let reader: web_sys::FileReader = event
@@ -72,11 +68,7 @@ impl MidiInput {
             .expect("failed to set change event handler");
         on_change_closure.forget();
 
-        Self {
-            element,
-            midi_cb,
-            error_cb,
-        }
+        Self { element }
     }
 }
 
@@ -143,8 +135,9 @@ impl WaveKind {
         }
     }
 }
+
 pub struct PlaybackControls {
-    play_pause_button: web_sys::HtmlButtonElement,
+    play_pause_checkbox: web_sys::HtmlInputElement,
     position_label: web_sys::HtmlLabelElement,
     duration_scrubber: web_sys::HtmlInputElement,
     duration_label: web_sys::HtmlDivElement,
@@ -152,11 +145,11 @@ pub struct PlaybackControls {
 
 impl PlaybackControls {
     pub fn new(document: &Document) -> Self {
-        let play_pause_button = document
+        let play_pause_checkbox = document
             .get_element_by_id("play-pause")
-            .expect("play-pause button not found")
-            .dyn_into::<web_sys::HtmlButtonElement>()
-            .expect("failed to cast play-pause to HtmlButtonElement");
+            .expect("play-pause checkbox not found")
+            .dyn_into::<web_sys::HtmlInputElement>()
+            .expect("failed to cast play-pause to HtmlInputElement");
 
         let position_label = document
             .get_element_by_id("position-label")
@@ -177,25 +170,70 @@ impl PlaybackControls {
             .expect("failed to cast duration-label to HtmlDivElement");
 
         Self {
-            play_pause_button,
+            play_pause_checkbox,
             position_label,
             duration_scrubber,
             duration_label,
         }
     }
 
-    pub fn set_duration(&self, duration: Duration) {
+    fn format_duration(duration: Duration) -> String {
         let total_secs = duration.as_secs();
         let hours = total_secs / 3600;
         let mins = (total_secs % 3600) / 60;
         let secs = total_secs % 60;
 
-        let formatted = if hours > 0 {
+        if hours > 0 {
             format!("{:02}:{:02}:{:02}", hours, mins, secs)
         } else {
             format!("{:02}:{:02}", mins, secs)
-        };
+        }
+    }
 
-        self.duration_label.set_inner_text(&formatted);
+    pub fn set_duration(&self, duration: Duration) {
+        self.duration_scrubber
+            .set_max(&duration.as_secs_f32().to_string());
+        self.duration_label
+            .set_inner_text(&Self::format_duration(duration));
+    }
+
+    pub fn on_play_pause<F: FnMut(bool) + 'static>(&self, mut callback: F) {
+        let closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
+            let checkbox: web_sys::HtmlInputElement = event
+                .target()
+                .unwrap()
+                .dyn_into()
+                .expect("cannot get correct target for change");
+            log::info!("play-pause changed: {}", checkbox.checked());
+
+            let is_play = checkbox.checked();
+            callback(is_play);
+        }) as Box<dyn FnMut(_)>);
+
+        self.play_pause_checkbox
+            .add_event_listener_with_callback("change", closure.as_ref().unchecked_ref())
+            .expect("failed to set play-pause click handler");
+        closure.forget();
+    }
+
+    pub fn on_position_change<F: FnMut(Duration) + 'static>(&self, mut callback: F) {
+        let position_label = self.position_label.clone();
+        let closure = Closure::wrap(Box::new(move |event: web_sys::Event| {
+            let input: web_sys::HtmlInputElement = event
+                .target()
+                .unwrap()
+                .dyn_into()
+                .expect("cannot get correct target for change");
+            let position = Duration::from_secs_f32(input.value().parse::<f32>().unwrap_or(0.0));
+
+            position_label.set_inner_text(&Self::format_duration(position));
+
+            callback(position);
+        }) as Box<dyn FnMut(_)>);
+
+        self.duration_scrubber
+            .add_event_listener_with_callback("input", closure.as_ref().unchecked_ref())
+            .expect("failed to set duration-scrubber input handler");
+        closure.forget();
     }
 }

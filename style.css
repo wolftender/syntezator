@@ -9,12 +9,22 @@ body {
   align-items: center;
 }
 
-.pause::before {
+#play-pause:checked + label::after {
   content: "⏸️";
 }
 
-.play::before {
+#play-pause:not(:checked) + label::after {
   content: "▶️";
+}
+
+#play-pause + label::after {
+  cursor: pointer;
+  font-size: 2rem;
+}
+
+#play-pause {
+  vertical-align: middle;
+  display: none;
 }
 
 #duration-scrubber {
