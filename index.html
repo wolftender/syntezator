@@ -18,8 +18,25 @@
         await start();
       });
     </script>
+    <div class="row">
+      <label for="midi">Upload MIDI file:</label>
+      <input type="file" accept="audio/midi" id="midi" />
+    </div>
 
-    <label for="midi">Upload MIDI file:</label>
-    <input type="file" accept="audio/midi" id="midi" />
+    <div class="row">
+      <label for="synth-kind">Choose a synthesizer:</label>
+      <select name="synths" id="synth-kind">
+        <option selected value="web_audio">Web Audio</option>
+        <option value="raw">Raw</option>
+      </select>
+
+      <label for="wave-kind">Choose a wave type:</label>
+      <select name="waves" id="wave-kind">
+        <option value="sine">Sine</option>
+        <option value="square">Square</option>
+        <option value="sawtooth">Sawtooth</option>
+        <option value="triangle">Triangle</option>
+      </select>
+    </div>
   </body>
 </html>

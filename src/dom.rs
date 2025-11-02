@@ -79,3 +79,67 @@ impl MidiInput {
         }
     }
 }
+
+pub struct SynthKind {
+    element: web_sys::HtmlSelectElement,
+}
+
+pub enum SynthKindOption {
+    Raw,
+    WebAudio,
+}
+
+impl SynthKind {
+    pub fn new(document: &Document) -> Self {
+        let element = document
+            .get_element_by_id("synth-kind")
+            .expect("synth-kind select element not found")
+            .dyn_into::<web_sys::HtmlSelectElement>()
+            .expect("failed to cast synth-kind to HtmlSelectElement");
+
+        Self { element }
+    }
+
+    pub fn get_selected(&self) -> SynthKindOption {
+        let value = self.element.value();
+        match value.as_str() {
+            "raw" => SynthKindOption::Raw,
+            "web_audio" => SynthKindOption::WebAudio,
+            _ => panic!("unknown synth kind selected"),
+        }
+    }
+}
+
+pub struct WaveKind {
+    element: web_sys::HtmlSelectElement,
+}
+
+pub enum WaveKindOption {
+    Sine,
+    Square,
+    Sawtooth,
+    Triangle,
+}
+
+impl WaveKind {
+    pub fn new(document: &Document) -> Self {
+        let element = document
+            .get_element_by_id("wave-kind")
+            .expect("wave-kind select element not found")
+            .dyn_into::<web_sys::HtmlSelectElement>()
+            .expect("failed to cast wave-kind to HtmlSelectElement");
+
+        Self { element }
+    }
+
+    pub fn get_selected(&self) -> WaveKindOption {
+        let value = self.element.value();
+        match value.as_str() {
+            "sine" => WaveKindOption::Sine,
+            "square" => WaveKindOption::Square,
+            "sawtooth" => WaveKindOption::Sawtooth,
+            "triangle" => WaveKindOption::Triangle,
+            _ => panic!("unknown wave kind selected"),
+        }
+    }
+}
