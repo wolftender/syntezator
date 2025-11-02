@@ -608,8 +608,27 @@ impl MIDITrack {
     }
 }
 
+pub enum MIDIFormat {
+    SingleMultiChannelTrack,
+    MultiTracks,
+    MultiIndependentTracks,
+}
+
+impl MIDIFormat {
+    fn new(reader: &mut BigEndianReader) -> Result<MIDIFormat, MIDIFileError> {
+        let value = reader.read_u16().ok_or(MIDIFileError::InvalidHeader)?;
+        match value {
+            0 => Ok(MIDIFormat::SingleMultiChannelTrack),
+            1 => Ok(MIDIFormat::MultiTracks),
+            2 => Ok(MIDIFormat::MultiIndependentTracks),
+            _ => Err(MIDIFileError::UnsupportedType),
+        }
+    }
+}
+
 pub struct MIDIFileData {
     num_tracks: u16,
+    format: MIDIFormat,
     tracks: Vec<MIDITrack>,
     time_division: TimeDivision,
 }
@@ -658,7 +677,7 @@ impl TryFrom<&[u8]> for MIDIFileData {
             return Err(MIDIFileError::HeaderSizeMismatch);
         }
 
-        let _format_type = reader.read_u16().ok_or(MIDIFileError::InvalidHeader)?;
+        let format = MIDIFormat::new(&mut reader)?;
 
         let num_tracks = reader.read_u16().ok_or(MIDIFileError::InvalidTrackCount)?;
         let time_division = Self::parse_time_division(
@@ -674,6 +693,7 @@ impl TryFrom<&[u8]> for MIDIFileData {
 
         Ok(Self {
             tracks,
+            format,
             num_tracks,
             time_division,
         })
