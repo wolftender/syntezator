@@ -60,15 +60,12 @@ impl<'a> BigEndianReader<'a> {
     fn read_var_length(&mut self) -> Option<u32> {
         let mut value = 0u32;
         for _ in 0..4 {
-            if let Some(byte) = self.read_u8() {
-                if byte & 0x80 == 0 {
-                    value = value + (byte as u32);
-                    break;
-                } else {
-                    value = (value + ((byte & 0x7Fu8) as u32)) << 7;
-                }
+            let byte = self.read_u8()?;
+            if byte & 0x80 == 0 {
+                value = value + (byte as u32);
+                break;
             } else {
-                return None;
+                value = (value + ((byte & 0x7Fu8) as u32)) << 7;
             }
         }
 
@@ -87,10 +84,11 @@ pub enum MIDIFileError {
     HeaderSizeMismatch,
     InvalidTrackCount,
     InvalidTimeDivision,
+    UnsupportedType,
     InvalidSMPTEValue,
     InvalidTrackChunk,
     InvalidEvent,
-    InvalidTrackEventType,
+    InvalidTrackEventType(u8),
     UnsupportedEvent,
     InvalidMetaEvent,
     UnexpectedMetaLength(u8, u32),
@@ -163,14 +161,12 @@ pub enum ChannelEvent {
         delta_time: u32,
         channel: u8,
         program_number: u8,
-        reserved: u8,
     },
 
     ChannelAftertouch {
         delta_time: u32,
         channel: u8,
         aftertouch: u8,
-        reserved: u8,
     },
 
     PitchBend {
@@ -327,60 +323,57 @@ impl MIDIEvent {
         delta_time: u32,
         event_type: u8,
         channel: u8,
-        param1: u8,
-        param2: u8,
+        mut read_param: impl FnMut() -> Result<u8, MIDIFileError>,
     ) -> Result<Self, MIDIFileError> {
         Ok(match event_type {
             0x8 => MIDIEvent::Channel(ChannelEvent::NoteOff {
                 delta_time,
                 channel,
-                note: param1,
-                velocity: param2,
+                note: read_param()?,
+                velocity: read_param()?,
             }),
 
             0x9 => MIDIEvent::Channel(ChannelEvent::NoteOn {
                 delta_time,
                 channel,
-                note: param1,
-                velocity: param2,
+                note: read_param()?,
+                velocity: read_param()?,
             }),
 
             0xA => MIDIEvent::Channel(ChannelEvent::NoteAftertouch {
                 delta_time,
                 channel,
-                note: param1,
-                aftertouch: param2,
+                note: read_param()?,
+                aftertouch: read_param()?,
             }),
 
             0xB => MIDIEvent::Channel(ChannelEvent::Controller {
                 delta_time,
                 channel,
-                controller_number: param1,
-                controller_value: param2,
+                controller_number: read_param()?,
+                controller_value: read_param()?,
             }),
 
             0xC => MIDIEvent::Channel(ChannelEvent::ProgramChange {
                 delta_time,
                 channel,
-                program_number: param1,
-                reserved: param2,
+                program_number: read_param()?,
             }),
 
             0xD => MIDIEvent::Channel(ChannelEvent::ChannelAftertouch {
                 delta_time,
                 channel,
-                aftertouch: param1,
-                reserved: param2,
+                aftertouch: read_param()?,
             }),
 
             0xE => MIDIEvent::Channel(ChannelEvent::PitchBend {
                 delta_time,
                 channel,
-                lsb: param1,
-                msb: param2,
+                lsb: read_param()?,
+                msb: read_param()?,
             }),
 
-            _ => return Err(MIDIFileError::InvalidTrackEventType),
+            _ => return Err(MIDIFileError::InvalidTrackEventType(event_type)),
         })
     }
 
@@ -579,6 +572,8 @@ impl MIDITrack {
         let mut track_reader = BigEndianReader::new(track_buffer);
         let mut events = vec![];
 
+        let mut running_status: Option<(u8, u8)> = None;
+
         loop {
             let delta_time = track_reader
                 .read_var_length()
@@ -587,7 +582,46 @@ impl MIDITrack {
             let type_byte = track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)?;
 
             match type_byte {
+                0x00..=0x7F => {
+                    // channel event with a running status
+                    let (event_type, channel) =
+                        running_status.ok_or(MIDIFileError::InvalidEvent)?;
+                    let mut param1 = Some(type_byte);
+
+                    let event =
+                        MIDIEvent::from_track_event(delta_time, event_type, channel, || {
+                            if let Some(v) = param1.take() {
+                                Ok(v)
+                            } else {
+                                track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)
+                            }
+                        })?;
+
+                    events.push(event);
+                }
+                0x80..=0xEF => {
+                    // channel event
+                    let event_type = (0xf0u8 & type_byte) >> 4;
+                    let channel = 0x0fu8 & type_byte;
+
+                    let event =
+                        MIDIEvent::from_track_event(delta_time, event_type, channel, || {
+                            track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)
+                        })?;
+
+                    events.push(event);
+                    running_status = Some((event_type, channel));
+                }
+                0xF0..=0xF7 => {
+                    // sysex event
+                    return Err(MIDIFileError::UnsupportedEvent);
+                }
+                0xF8..=0xFE => {
+                    // real-time event
+                    return Err(MIDIFileError::UnsupportedEvent);
+                }
                 0xFF => {
+                    // meta event
                     let event = MIDIEvent::from_meta_event(&mut track_reader)?;
                     let is_end_of_track = matches!(event, MIDIEvent::Meta(MetaEvent::EndOfTrack));
 
@@ -595,20 +629,7 @@ impl MIDITrack {
                     if is_end_of_track {
                         break;
                     }
-                }
-                0xF0 => return Err(MIDIFileError::UnsupportedEvent),
-                type_byte => {
-                    let event_type = (0xf0u8 & type_byte) >> 4;
-                    let channel = 0x0fu8 & type_byte;
-
-                    let param1 = track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)?;
-                    let param2 = track_reader.read_u8().ok_or(MIDIFileError::InvalidEvent)?;
-
-                    let event = MIDIEvent::from_track_event(
-                        delta_time, event_type, channel, param1, param2,
-                    )?;
-
-                    events.push(event);
+                    running_status = None;
                 }
             }
         }
@@ -617,8 +638,27 @@ impl MIDITrack {
     }
 }
 
+pub enum MIDIFormat {
+    SingleMultiChannelTrack,
+    MultiTracks,
+    MultiIndependentTracks,
+}
+
+impl MIDIFormat {
+    fn new(reader: &mut BigEndianReader) -> Result<MIDIFormat, MIDIFileError> {
+        let value = reader.read_u16().ok_or(MIDIFileError::InvalidHeader)?;
+        match value {
+            0 => Ok(MIDIFormat::SingleMultiChannelTrack),
+            1 => Ok(MIDIFormat::MultiTracks),
+            2 => Ok(MIDIFormat::MultiIndependentTracks),
+            _ => Err(MIDIFileError::UnsupportedType),
+        }
+    }
+}
+
 pub struct MIDIFileData {
     num_tracks: u16,
+    format: MIDIFormat,
     tracks: Vec<MIDITrack>,
     time_division: TimeDivision,
 }
@@ -652,6 +692,10 @@ impl MIDIFileData {
             Ok(TimeDivision::FramesPerSecond(smpte_value, clock_ticks))
         }
     }
+
+    pub fn format(&self) -> &MIDIFormat {
+        &self.format
+    }
 }
 
 impl TryFrom<&[u8]> for MIDIFileData {
@@ -667,7 +711,7 @@ impl TryFrom<&[u8]> for MIDIFileData {
             return Err(MIDIFileError::HeaderSizeMismatch);
         }
 
-        let _format_type = reader.read_u16().ok_or(MIDIFileError::InvalidHeader)?;
+        let format = MIDIFormat::new(&mut reader)?;
 
         let num_tracks = reader.read_u16().ok_or(MIDIFileError::InvalidTrackCount)?;
         let time_division = Self::parse_time_division(
@@ -683,6 +727,7 @@ impl TryFrom<&[u8]> for MIDIFileData {
 
         Ok(Self {
             tracks,
+            format,
             num_tracks,
             time_division,
         })
@@ -695,20 +740,32 @@ mod tests {
 
     #[test]
     fn test_read_var_len() {
-        let test_vec1: Vec<u8> = vec![0b00000000];
-        let test_vec2: Vec<u8> = vec![0b11001000];
-        let test_vec3: Vec<u8> = vec![0b10000001, 0b01001000];
-        let test_vec4: Vec<u8> = vec![0b11000000, 0b10000000, 0b00000000];
+        let tests = vec![
+            (Some(0u32), vec![0b00000000u8]),
+            (None, vec![0b11001000]),
+            (Some(0xC8), vec![0b10000001, 0b01001000]),
+            (Some(0x100000), vec![0b11000000, 0b10000000, 0b00000000]),
+            (Some(0x00000040), vec![0x40]),
+            (Some(0x0000007F), vec![0x7F]),
+            (Some(0x00000080), vec![0x81, 0x00]),
+            (Some(0x00002000), vec![0xC0, 0x00]),
+            (Some(0x00003FFF), vec![0xFF, 0x7F]),
+            (Some(0x00004000), vec![0x81, 0x80, 0x00]),
+            (Some(0x00100000), vec![0xC0, 0x80, 0x00]),
+            (Some(0x001FFFFF), vec![0xFF, 0xFF, 0x7F]),
+            (Some(0x00200000), vec![0x81, 0x80, 0x80, 0x00]),
+            (Some(0x08000000), vec![0xC0, 0x80, 0x80, 0x00]),
+            (Some(0x0FFFFFFF), vec![0xFF, 0xFF, 0xFF, 0x7F]),
+        ];
 
         fn read_int_from_buf_helper(buf: &[u8]) -> Option<u32> {
             let mut reader = BigEndianReader::new(buf);
             reader.read_var_length()
         }
 
-        assert_eq!(read_int_from_buf_helper(&test_vec1), Some(0));
-        assert_eq!(read_int_from_buf_helper(&test_vec2), None);
-        assert_eq!(read_int_from_buf_helper(&test_vec3), Some(0xC8));
-        assert_eq!(read_int_from_buf_helper(&test_vec4), Some(0x100000));
+        for (expected, input) in tests {
+            assert_eq!(read_int_from_buf_helper(&input), expected);
+        }
     }
 
     #[test]
