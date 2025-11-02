@@ -1,5 +1,5 @@
 //! Handles to DOM elements in the HTML, and helper functions for interacting with JS.
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use wasm_bindgen::prelude::*;
 use web_sys::{Document, FileReader, js_sys::Uint8Array};
@@ -141,5 +141,61 @@ impl WaveKind {
             "triangle" => WaveKindOption::Triangle,
             _ => panic!("unknown wave kind selected"),
         }
+    }
+}
+pub struct PlaybackControls {
+    play_pause_button: web_sys::HtmlButtonElement,
+    position_label: web_sys::HtmlLabelElement,
+    duration_scrubber: web_sys::HtmlInputElement,
+    duration_label: web_sys::HtmlDivElement,
+}
+
+impl PlaybackControls {
+    pub fn new(document: &Document) -> Self {
+        let play_pause_button = document
+            .get_element_by_id("play-pause")
+            .expect("play-pause button not found")
+            .dyn_into::<web_sys::HtmlButtonElement>()
+            .expect("failed to cast play-pause to HtmlButtonElement");
+
+        let position_label = document
+            .get_element_by_id("position-label")
+            .expect("position-label not found")
+            .dyn_into::<web_sys::HtmlLabelElement>()
+            .expect("failed to cast position-label to HtmlLabelElement");
+
+        let duration_scrubber = document
+            .get_element_by_id("duration-scrubber")
+            .expect("duration-scrubber not found")
+            .dyn_into::<web_sys::HtmlInputElement>()
+            .expect("failed to cast duration-scrubber to HtmlInputElement");
+
+        let duration_label = document
+            .get_element_by_id("duration-label")
+            .expect("duration-label not found")
+            .dyn_into::<web_sys::HtmlDivElement>()
+            .expect("failed to cast duration-label to HtmlDivElement");
+
+        Self {
+            play_pause_button,
+            position_label,
+            duration_scrubber,
+            duration_label,
+        }
+    }
+
+    pub fn set_duration(&self, duration: Duration) {
+        let total_secs = duration.as_secs();
+        let hours = total_secs / 3600;
+        let mins = (total_secs % 3600) / 60;
+        let secs = total_secs % 60;
+
+        let formatted = if hours > 0 {
+            format!("{:02}:{:02}:{:02}", hours, mins, secs)
+        } else {
+            format!("{:02}:{:02}", mins, secs)
+        };
+
+        self.duration_label.set_inner_text(&formatted);
     }
 }

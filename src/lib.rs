@@ -3,8 +3,9 @@ use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    dom::{SynthKind, SynthKindOption, WaveKind, WaveKindOption},
+    dom::{PlaybackControls, SynthKind, SynthKindOption, WaveKind, WaveKindOption},
     midi::MIDIFileData,
+    synth::MidiMetadata,
     wave::{SawtoothWave, SineWave, SquareWave, TriangleWave, Wave},
 };
 mod dom;
@@ -102,9 +103,14 @@ pub fn main() -> Result<(), JsValue> {
     let synth_kind = SynthKind::new(&document);
     let wave_kind = WaveKind::new(&document);
 
+    let playback_controls = PlaybackControls::new(&document);
+
     let _midi = dom::MidiInput::new(
         &document,
         move |midi_data| {
+            let duration = MidiMetadata::new(&midi_data).total_duration();
+            playback_controls.set_duration(duration);
+
             log::info!("midi file uploaded! tracks: {}", midi_data.num_tracks());
             for track in midi_data.tracks() {
                 log::info!("track with {} events", track.events().len())

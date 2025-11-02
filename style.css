@@ -1,5 +1,22 @@
+body {
+  padding: 2rem;
+}
+
 .row {
   display: flex;
   flex-direction: row;
   gap: 1rem;
+  align-items: center;
+}
+
+.pause::before {
+  content: "⏸️";
+}
+
+.play::before {
+  content: "▶️";
+}
+
+#duration-scrubber {
+  margin-bottom: 0;
 }
