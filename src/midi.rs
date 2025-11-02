@@ -60,15 +60,12 @@ impl<'a> BigEndianReader<'a> {
     fn read_var_length(&mut self) -> Option<u32> {
         let mut value = 0u32;
         for _ in 0..4 {
-            if let Some(byte) = self.read_u8() {
-                if byte & 0x80 == 0 {
-                    value = value + (byte as u32);
-                    break;
-                } else {
-                    value = (value + ((byte & 0x7Fu8) as u32)) << 7;
-                }
+            let byte = self.read_u8()?;
+            if byte & 0x80 == 0 {
+                value = value + (byte as u32);
+                break;
             } else {
-                return None;
+                value = (value + ((byte & 0x7Fu8) as u32)) << 7;
             }
         }
 
@@ -87,6 +84,7 @@ pub enum MIDIFileError {
     HeaderSizeMismatch,
     InvalidTrackCount,
     InvalidTimeDivision,
+    UnsupportedType,
     InvalidSMPTEValue,
     InvalidTrackChunk,
     InvalidEvent,
@@ -688,20 +686,32 @@ mod tests {
 
     #[test]
     fn test_read_var_len() {
-        let test_vec1: Vec<u8> = vec![0b00000000];
-        let test_vec2: Vec<u8> = vec![0b11001000];
-        let test_vec3: Vec<u8> = vec![0b10000001, 0b01001000];
-        let test_vec4: Vec<u8> = vec![0b11000000, 0b10000000, 0b00000000];
+        let tests = vec![
+            (Some(0u32), vec![0b00000000u8]),
+            (None, vec![0b11001000]),
+            (Some(0xC8), vec![0b10000001, 0b01001000]),
+            (Some(0x100000), vec![0b11000000, 0b10000000, 0b00000000]),
+            (Some(0x00000040), vec![0x40]),
+            (Some(0x0000007F), vec![0x7F]),
+            (Some(0x00000080), vec![0x81, 0x00]),
+            (Some(0x00002000), vec![0xC0, 0x00]),
+            (Some(0x00003FFF), vec![0xFF, 0x7F]),
+            (Some(0x00004000), vec![0x81, 0x80, 0x00]),
+            (Some(0x00100000), vec![0xC0, 0x80, 0x00]),
+            (Some(0x001FFFFF), vec![0xFF, 0xFF, 0x7F]),
+            (Some(0x00200000), vec![0x81, 0x80, 0x80, 0x00]),
+            (Some(0x08000000), vec![0xC0, 0x80, 0x80, 0x00]),
+            (Some(0x0FFFFFFF), vec![0xFF, 0xFF, 0xFF, 0x7F]),
+        ];
 
         fn read_int_from_buf_helper(buf: &[u8]) -> Option<u32> {
             let mut reader = BigEndianReader::new(buf);
             reader.read_var_length()
         }
 
-        assert_eq!(read_int_from_buf_helper(&test_vec1), Some(0));
-        assert_eq!(read_int_from_buf_helper(&test_vec2), None);
-        assert_eq!(read_int_from_buf_helper(&test_vec3), Some(0xC8));
-        assert_eq!(read_int_from_buf_helper(&test_vec4), Some(0x100000));
+        for (expected, input) in tests {
+            assert_eq!(read_int_from_buf_helper(&input), expected);
+        }
     }
 
     #[test]
