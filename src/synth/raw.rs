@@ -104,7 +104,7 @@ impl MidiSynth {
     /// Create a vector per track per channel filled with values from -1 to 1.
     ///
     /// All individual buffers are of the same length, equal to the first tuple element.
-    pub fn create_buffer(&self, sample_rate: u32, wave: impl Wave) -> (usize, Vec<Vec<Vec<f32>>>) {
+    pub fn create_buffer(&self, sample_rate: u32, wave: &dyn Wave) -> (usize, Vec<Vec<Vec<f32>>>) {
         let buffer_length =
             (sample_rate as f32 * self.meta.total_duration().as_secs_f32()).floor() as usize;
 

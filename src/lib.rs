@@ -2,7 +2,11 @@ use std::{cell::RefCell, rc::Rc};
 
 use wasm_bindgen::prelude::*;
 
-use crate::{midi::MIDIFileData, wave::SawtoothWave};
+use crate::{
+    dom::{SynthKind, SynthKindOption, WaveKind, WaveKindOption},
+    midi::MIDIFileData,
+    wave::{SawtoothWave, SineWave, SquareWave, TriangleWave, Wave},
+};
 mod dom;
 
 #[allow(dead_code)]
@@ -32,31 +36,51 @@ impl MidiPlayerState {
         })
     }
 
-    pub fn set_buffer(&mut self, midi_data: MIDIFileData) -> Result<(), JsValue> {
-        log::info!("received midi file");
+    pub fn set_buffer(
+        &mut self,
+        midi_data: MIDIFileData,
+        synth_kind: SynthKindOption,
+        wave_kind: WaveKindOption,
+    ) -> Result<(), JsValue> {
+        let wave: &dyn Wave = match wave_kind {
+            WaveKindOption::Sine => &SineWave,
+            WaveKindOption::Square => &SquareWave,
+            WaveKindOption::Sawtooth => &SawtoothWave,
+            WaveKindOption::Triangle => &TriangleWave,
+        };
 
-        let synth = synth::raw::MidiSynth::new(midi_data);
-        let sample_rate = self.audio_context.sample_rate();
-        let (buffer_length, buffers) = synth.create_buffer(sample_rate as u32, SawtoothWave);
+        match synth_kind {
+            SynthKindOption::Raw => {
+                let synth = synth::raw::MidiSynth::new(midi_data);
+                let sample_rate = self.audio_context.sample_rate();
+                let (buffer_length, buffers) = synth.create_buffer(sample_rate as u32, wave);
 
-        let flattened_buffers = buffers.into_iter().flatten().collect::<Vec<_>>();
+                let flattened_buffers = buffers.into_iter().flatten().collect::<Vec<_>>();
 
-        let audio_buffer = self.audio_context.create_buffer(
-            flattened_buffers.len() as u32,
-            buffer_length as u32,
-            sample_rate,
-        )?;
+                let audio_buffer = self.audio_context.create_buffer(
+                    flattened_buffers.len() as u32,
+                    buffer_length as u32,
+                    sample_rate,
+                )?;
 
-        for channel in 0..audio_buffer.number_of_channels() {
-            audio_buffer.copy_to_channel(&flattened_buffers[channel as usize], channel as i32)?;
+                for channel in 0..audio_buffer.number_of_channels() {
+                    audio_buffer
+                        .copy_to_channel(&flattened_buffers[channel as usize], channel as i32)?;
+                }
+
+                self.audio_source.disconnect()?;
+                self.audio_source = self.audio_context.create_buffer_source()?;
+                self.audio_source.set_buffer(Some(&audio_buffer));
+                self.audio_source
+                    .connect_with_audio_node(&self.audio_context.destination())?;
+                self.audio_source.start()?;
+            }
+            SynthKindOption::WebAudio => {
+                let synth = synth::web_audio::MidiSynth::new(midi_data);
+                synth.schedule(&self.audio_context, wave)?;
+                // TODO: remove existing playback
+            }
         }
-
-        self.audio_source.disconnect()?;
-        self.audio_source = self.audio_context.create_buffer_source()?;
-        self.audio_source.set_buffer(Some(&audio_buffer));
-        self.audio_source
-            .connect_with_audio_node(&self.audio_context.destination())?;
-        self.audio_source.start()?;
 
         Ok(())
     }
@@ -75,6 +99,9 @@ pub fn main() -> Result<(), JsValue> {
     let player_state = Rc::new(RefCell::new(MidiPlayerState::new(audio_context)?));
     let player_state_c = player_state.clone();
 
+    let synth_kind = SynthKind::new(&document);
+    let wave_kind = WaveKind::new(&document);
+
     let _midi = dom::MidiInput::new(
         &document,
         move |midi_data| {
@@ -83,7 +110,11 @@ pub fn main() -> Result<(), JsValue> {
                 log::info!("track with {} events", track.events().len())
             }
 
-            if let Err(error) = player_state_c.borrow_mut().set_buffer(midi_data) {
+            if let Err(error) = player_state_c.borrow_mut().set_buffer(
+                midi_data,
+                synth_kind.get_selected(),
+                wave_kind.get_selected(),
+            ) {
                 log::error!("invalid midi file supplied: {:?}", error);
                 alert(&format!("invalid midi file supplied: {:?}", error));
             }

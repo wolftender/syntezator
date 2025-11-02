@@ -19,6 +19,7 @@ wasm-bindgen = "0.2.104"
 version = "0.3.81"
 features = [
     'AudioContext',
+    'AudioParam',
     'AudioDestinationNode',
     'AudioBuffer',
     'AudioBufferSourceNode',
@@ -36,6 +37,11 @@ features = [
     'HtmlSourceElement',
     'HtmlAudioElement',
     'HtmlInputElement',
+    'HtmlSelectElement',
     'Node',
+    'OscillatorNode',
+    'PeriodicWave',
+    'GainNode',
+    'PeriodicWaveOptions',
     'Window',
 ]
