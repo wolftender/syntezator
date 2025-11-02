@@ -2,7 +2,7 @@ use std::{cell::RefCell, rc::Rc};
 
 use wasm_bindgen::prelude::*;
 
-use crate::midi::MIDIFileData;
+use crate::{midi::MIDIFileData, wave::SawtoothWave};
 mod dom;
 
 #[allow(dead_code)]
@@ -37,7 +37,7 @@ impl MidiPlayerState {
 
         let synth = synth::raw::MidiSynth::new(midi_data);
         let sample_rate = self.audio_context.sample_rate();
-        let (buffer_length, buffers) = synth.create_buffer(sample_rate as u32);
+        let (buffer_length, buffers) = synth.create_buffer(sample_rate as u32, SawtoothWave);
 
         let flattened_buffers = buffers.into_iter().flatten().collect::<Vec<_>>();
 
