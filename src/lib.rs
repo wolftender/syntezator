@@ -77,7 +77,7 @@ impl MidiPlayerState {
             }
             SynthKindOption::WebAudio => {
                 let synth = synth::web_audio::MidiSynth::new(midi_data);
-                synth.schedule(&self.audio_context, wave)?;
+                synth.schedule(&self.audio_context, wave, &self.audio_context.destination())?;
                 // TODO: remove existing playback
             }
         }

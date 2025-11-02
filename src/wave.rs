@@ -34,6 +34,7 @@ impl Wave for SineWave {
     }
 
     fn decompose(&self) -> (&[f32], &[f32]) {
+        // src: https://webaudio.github.io/web-audio-api/#oscillator-coefficients
         static REAL: [f32; 2] = [0.0, 0.0];
         static IMAG: [f32; 2] = [0.0, 1.0];
         (&REAL, &IMAG)
@@ -50,13 +51,14 @@ impl Wave for SquareWave {
     }
 
     fn decompose(&self) -> (&[f32], &[f32]) {
+        // src: https://webaudio.github.io/web-audio-api/#oscillator-coefficients
         static REAL: [f32; 4000] = [0.0; 4000];
         static IMAG: [f32; 4000] = const {
             let mut arr = [0.0; 4000];
             arr[0] = 0.0;
             let mut k = 1;
             while k < arr.len() {
-                arr[k] = (2.0 / (k as f32 * PI)) * (1.0 - (1.0 - (k % 2 * 2) as f32));
+                arr[k] = (2.0 / (k as f32 * PI)) * ((k % 2 * 2) as f32);
                 k += 1;
             }
             arr
@@ -75,6 +77,7 @@ impl Wave for SawtoothWave {
     }
 
     fn decompose(&self) -> (&[f32], &[f32]) {
+        // src: https://webaudio.github.io/web-audio-api/#oscillator-coefficients
         static REAL: [f32; 4000] = [0.0; 4000];
         static IMAG: [f32; 4000] = const {
             let mut arr = [0.0; 4000];
@@ -102,6 +105,7 @@ impl Wave for TriangleWave {
     }
 
     fn decompose(&self) -> (&[f32], &[f32]) {
+        // src: https://webaudio.github.io/web-audio-api/#oscillator-coefficients
         static REAL: [f32; 4000] = [0.0; 4000];
         // sin is not const-fn :(
         static IMAG: LazyLock<[f32; 4000]> = LazyLock::new(|| {
@@ -127,7 +131,7 @@ pub struct CustomWave<'a> {
 }
 
 impl<'a> CustomWave<'a> {
-    fn new(real: &'a [f32], imag: &'a [f32]) -> Self {
+    pub fn new(real: &'a [f32], imag: &'a [f32]) -> Self {
         assert!(real.len() == imag.len());
 
         Self { real, imag }

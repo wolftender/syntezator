@@ -8,6 +8,7 @@ crate-type = ["cdylib"]
 
 [lints.clippy]
 assign_op_pattern = "allow"
+too_many_arguments = "allow"
 
 [dependencies]
 console_error_panic_hook = "0.1.7"

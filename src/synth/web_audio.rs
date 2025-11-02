@@ -19,7 +19,12 @@ impl MidiSynth {
         Self { data }
     }
 
-    pub fn schedule(&self, ctx: &web_sys::AudioContext, wave: &dyn Wave) -> Result<(), JsValue> {
+    pub fn schedule(
+        &self,
+        ctx: &web_sys::AudioContext,
+        wave: &dyn Wave,
+        destination: &web_sys::AudioNode,
+    ) -> Result<(), JsValue> {
         let (real, imag) = wave.decompose();
         let periodic_wave_options = {
             let options = web_sys::PeriodicWaveOptions::new();
@@ -57,6 +62,7 @@ impl MidiSynth {
                                 {
                                     Self::schedule_note(
                                         ctx,
+                                        destination,
                                         &periodic_wave,
                                         note,
                                         played_note.on_velocity,
@@ -108,6 +114,7 @@ impl MidiSynth {
 
     fn schedule_note(
         ctx: &web_sys::AudioContext,
+        destination: &web_sys::AudioNode,
         periodic_wave: &web_sys::PeriodicWave,
         note: MidiNote,
         on_velocity: u8,
@@ -122,15 +129,16 @@ impl MidiSynth {
 
         oscillator.set_periodic_wave(periodic_wave);
         oscillator.frequency().set_value(note.frequency());
+        oscillator.start_with_when(start_time.as_secs_f64())?;
+        oscillator.stop_with_when(end_time.as_secs_f64())?;
+
         gain.gain()
             .set_value_at_time(on_velocity as f32 / 127.0, start_time.as_secs_f64())?;
         gain.gain()
             .linear_ramp_to_value_at_time(0.0001, end_time.as_secs_f64())?;
 
         oscillator.connect_with_audio_node(&gain)?;
-        oscillator.connect_with_audio_node(&ctx.destination())?;
-        oscillator.start_with_when(start_time.as_secs_f64())?;
-        oscillator.stop_with_when(end_time.as_secs_f64())?;
+        gain.connect_with_audio_node(destination)?;
 
         Ok(())
     }
