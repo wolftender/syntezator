@@ -7,7 +7,8 @@ use std::{
 
 use crate::{
     midi::{ChannelEventKind, MIDIEventKind, MIDIFileData, MetaEvent, Tempo},
-    wave::{SineWave, Wave},
+    synth::MidiNote,
+    wave::Wave,
 };
 
 #[derive(Debug)]
@@ -87,25 +88,6 @@ impl MidiMeta {
     }
 }
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct MidiNote {
-    note: u8,
-}
-
-impl MidiNote {
-    fn new(note: u8) -> Self {
-        Self { note }
-    }
-
-    fn frequency(&self) -> f32 {
-        const A4_FREQUENCY: f32 = 440.0;
-        const A4_MIDI_NOTE: f32 = 69.0;
-        const NOTE_COUNT: f32 = 12.0;
-
-        A4_FREQUENCY * 2.0f32.powf((self.note as f32 - A4_MIDI_NOTE) / NOTE_COUNT)
-    }
-}
-
 pub struct MidiSynth {
     data: MIDIFileData,
     meta: MidiMeta,
@@ -122,7 +104,7 @@ impl MidiSynth {
     /// Create a vector per track per channel filled with values from -1 to 1.
     ///
     /// All individual buffers are of the same length, equal to the first tuple element.
-    pub fn create_buffer(&self, sample_rate: u32) -> (usize, Vec<Vec<Vec<f32>>>) {
+    pub fn create_buffer(&self, sample_rate: u32, wave: &dyn Wave) -> (usize, Vec<Vec<Vec<f32>>>) {
         let buffer_length =
             (sample_rate as f32 * self.meta.total_duration().as_secs_f32()).floor() as usize;
 
@@ -154,7 +136,8 @@ impl MidiSynth {
                             let freq = notes
                                 .iter()
                                 .map(|n| {
-                                    SineWave::new(n.frequency()).value(
+                                    wave.value(
+                                        n.frequency(),
                                         (sample_number + sample_num) as f32 / sample_rate as f32,
                                     )
                                 })
