@@ -1,6 +1,8 @@
+#[allow(dead_code)]
 pub mod raw;
+pub mod web_audio;
 
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
 struct MidiNote {
     note: u8,
 }
