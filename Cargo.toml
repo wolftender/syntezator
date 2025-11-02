@@ -42,7 +42,10 @@ features = [
     'Node',
     'OscillatorNode',
     'PeriodicWave',
+    'AnalyserNode',
     'GainNode',
     'PeriodicWaveOptions',
     'Window',
+    'HtmlCanvasElement',
+    'CanvasRenderingContext2d'
 ]

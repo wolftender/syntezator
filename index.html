@@ -18,25 +18,44 @@
         await start();
       });
     </script>
-    <div class="row">
-      <label for="midi">Upload MIDI file:</label>
-      <input type="file" accept="audio/midi" id="midi" />
-    </div>
+    <div class="wrapper">
+      <h1>Syntezator</h1>
+      <div class="row">
+        <label for="midi">Upload MIDI file:</label>
+        <input type="file" accept="audio/midi" id="midi" />
+      </div>
 
-    <div class="row">
-      <label for="synth-kind">Choose a synthesizer:</label>
-      <select name="synths" id="synth-kind">
-        <option selected value="web_audio">Web Audio</option>
-        <option value="raw">Raw</option>
-      </select>
+      <div class="row">
+        <label for="synth-kind">Choose a synthesizer:</label>
+        <select name="synths" id="synth-kind">
+          <option selected value="web_audio">Web Audio</option>
+          <option value="raw">Raw</option>
+        </select>
 
-      <label for="wave-kind">Choose a wave type:</label>
-      <select name="waves" id="wave-kind">
-        <option selected value="sine">Sine</option>
-        <option value="square">Square</option>
-        <option value="sawtooth">Sawtooth</option>
-        <option value="triangle">Triangle</option>
-      </select>
+        <label for="wave-kind">Choose a wave type:</label>
+        <select name="waves" id="wave-kind">
+          <option selected value="sine">Sine</option>
+          <option value="square">Square</option>
+          <option value="sawtooth">Sawtooth</option>
+          <option value="triangle">Triangle</option>
+        </select>
+      </div>
+      <div class="row">
+        <div class="visualization">
+          <canvas
+            class="plotter"
+            id="plotter-time-domain"
+            width="1280"
+            height="720"
+          ></canvas>
+          <canvas
+            class="plotter"
+            id="plotter-freq-domain"
+            width="1280"
+            height="720"
+          ></canvas>
+        </div>
+      </div>
     </div>
   </body>
 </html>

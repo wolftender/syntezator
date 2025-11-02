@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
-
 use wasm_bindgen::prelude::*;
 
 use crate::{
     dom::{SynthKind, SynthKindOption, WaveKind, WaveKindOption},
     midi::MIDIFileData,
+    plotter::AudioVisualizer,
     wave::{SawtoothWave, SineWave, SquareWave, TriangleWave, Wave},
 };
 mod dom;
@@ -13,6 +13,7 @@ mod dom;
 mod midi;
 mod synth;
 
+mod plotter;
 #[allow(dead_code)]
 mod wave;
 
@@ -24,16 +25,59 @@ extern "C" {
 struct MidiPlayerState {
     audio_context: web_sys::AudioContext,
     audio_source: web_sys::AudioBufferSourceNode,
+    visualizer: Rc<RefCell<AudioVisualizer>>,
+}
+
+fn request_animation_frame(f: &Closure<dyn FnMut()>) {
+    web_sys::window()
+        .expect("global window not found")
+        .request_animation_frame(f.as_ref().unchecked_ref())
+        .expect("failed to request animation frame");
 }
 
 impl MidiPlayerState {
-    pub fn new(audio_context: web_sys::AudioContext) -> Result<Self, JsValue> {
+    pub fn new(
+        document: &web_sys::Document,
+        audio_context: web_sys::AudioContext,
+    ) -> Result<Self, JsValue> {
         let audio_source = audio_context.create_buffer_source()?;
+        let canvas_freq = document
+            .query_selector("#plotter-freq-domain")?
+            .ok_or(JsValue::from(
+                "did not find plotter element for freq domain",
+            ))?
+            .dyn_into()?;
+
+        let canvas_time = document
+            .query_selector("#plotter-time-domain")?
+            .ok_or(JsValue::from(
+                "did not find plotter element for time domain",
+            ))?
+            .dyn_into()?;
+
+        let visualizer = Rc::new(RefCell::new(AudioVisualizer::new(
+            audio_context.clone(),
+            canvas_freq,
+            canvas_time,
+        )?));
 
         Ok(Self {
             audio_context,
             audio_source,
+            visualizer,
         })
+    }
+
+    pub fn start_draw_loop(&mut self) {
+        let closure = Rc::new(RefCell::new(None));
+        let closure_c = closure.clone();
+        let visualizer_c = self.visualizer.clone();
+        *closure_c.borrow_mut() = Some(Closure::new(move || {
+            visualizer_c.borrow_mut().redraw();
+            request_animation_frame(closure.borrow().as_ref().unwrap());
+        }));
+
+        request_animation_frame(closure_c.borrow().as_ref().unwrap());
     }
 
     pub fn set_buffer(
@@ -77,7 +121,11 @@ impl MidiPlayerState {
             }
             SynthKindOption::WebAudio => {
                 let synth = synth::web_audio::MidiSynth::new(midi_data);
-                synth.schedule(&self.audio_context, wave, &self.audio_context.destination())?;
+                let analyzer_node = self.visualizer.borrow_mut().analyzer_node().clone();
+
+                synth.schedule(&self.audio_context, wave, &analyzer_node)?;
+                analyzer_node.connect_with_audio_node(&self.audio_context.destination())?;
+
                 // TODO: remove existing playback
             }
         }
@@ -96,11 +144,17 @@ pub fn main() -> Result<(), JsValue> {
     let _body = document.body().expect("document should have a body");
 
     let audio_context = web_sys::AudioContext::new()?;
-    let player_state = Rc::new(RefCell::new(MidiPlayerState::new(audio_context)?));
+    let player_state = Rc::new(RefCell::new(MidiPlayerState::new(
+        &document,
+        audio_context,
+    )?));
+
     let player_state_c = player_state.clone();
 
     let synth_kind = SynthKind::new(&document);
     let wave_kind = WaveKind::new(&document);
+
+    player_state.borrow_mut().start_draw_loop();
 
     let _midi = dom::MidiInput::new(
         &document,

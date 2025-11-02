@@ -1,5 +1,25 @@
+.wrapper {
+  width: 80%;
+  margin: auto;
+  padding-top: 40px;
+}
+
+.wrapper h1 {
+  margin-bottom: 40px;
+  padding-bottom: 15px;
+  border-bottom: 1px #848998a4 solid;
+}
+
 .row {
   display: flex;
   flex-direction: row;
   gap: 1rem;
+}
+
+.visualization {
+  display: flex;
+}
+
+.plotter {
+  width: 50%;
 }
