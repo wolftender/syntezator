@@ -116,15 +116,26 @@ impl MidiPlayerState {
                 self.audio_source = self.audio_context.create_buffer_source()?;
                 self.audio_source.set_buffer(Some(&audio_buffer));
                 self.audio_source
+                    .connect_with_audio_node(self.visualizer.borrow_mut().analyzer_node())?;
+                self.visualizer
+                    .borrow_mut()
+                    .analyzer_node()
                     .connect_with_audio_node(&self.audio_context.destination())?;
                 self.audio_source.start()?;
             }
             SynthKindOption::WebAudio => {
                 let synth = synth::web_audio::MidiSynth::new(midi_data);
-                let analyzer_node = self.visualizer.borrow_mut().analyzer_node().clone();
 
-                synth.schedule(&self.audio_context, wave, &analyzer_node)?;
-                analyzer_node.connect_with_audio_node(&self.audio_context.destination())?;
+                synth.schedule(
+                    &self.audio_context,
+                    wave,
+                    self.visualizer.borrow_mut().analyzer_node(),
+                )?;
+
+                self.visualizer
+                    .borrow_mut()
+                    .analyzer_node()
+                    .connect_with_audio_node(&self.audio_context.destination())?;
 
                 // TODO: remove existing playback
             }

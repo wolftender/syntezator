@@ -1,15 +1,13 @@
 use log::info;
 use wasm_bindgen::{JsCast, JsValue};
-use web_sys::{
-    AnalyserNode, AudioContext, CanvasRenderingContext2d, HtmlCanvasElement, console::info,
-};
+use web_sys::{AnalyserNode, AudioContext, CanvasRenderingContext2d, HtmlCanvasElement};
 
-pub struct Plotter {
+pub struct BarPlotter {
     canvas: HtmlCanvasElement,
     context: CanvasRenderingContext2d,
 }
 
-impl Plotter {
+impl BarPlotter {
     pub fn new(canvas: HtmlCanvasElement) -> Result<Self, JsValue> {
         let context = canvas
             .get_context("2d")?
@@ -24,7 +22,6 @@ impl Plotter {
         let height = self.canvas.height();
         let fwidth = f64::from(width);
         let fheight = f64::from(height);
-        let half_height = fheight * 0.5;
 
         self.context.set_fill_style_str("#000000");
         self.context.fill_rect(0.0, 0.0, fwidth, fheight);
@@ -33,15 +30,17 @@ impl Plotter {
         let mut offset_x = 0.0;
 
         for sample in data {
+            let sample = sample.clamp(min, max);
             let normalized = ((sample - min) / (max - min)) as f64;
-            let bar_height = normalized * fheight * 100.0;
+            let bar_height = normalized * fheight * 0.75;
+            let middle_y = fheight * 0.5;
+            let hue = (normalized * 96.0).floor() as u32;
 
-            //self.context
-            //    .set_fill_style_str(&format!("rgb({}, 50, 50)", (bar_height * 255.0).floor()));
-            self.context.set_fill_style_str("#ff0000");
+            self.context
+                .set_fill_style_str(&format!("hsl({hue}, 100%, 50%)"));
             self.context.fill_rect(
                 offset_x,
-                half_height - (0.5 * bar_height),
+                middle_y - (0.5 * bar_height),
                 bar_width,
                 bar_height,
             );
@@ -51,14 +50,56 @@ impl Plotter {
     }
 }
 
+pub struct LinePlotter {
+    canvas: HtmlCanvasElement,
+    context: CanvasRenderingContext2d,
+}
+
+impl LinePlotter {
+    pub fn new(canvas: HtmlCanvasElement) -> Result<Self, JsValue> {
+        let context = canvas
+            .get_context("2d")?
+            .ok_or(JsValue::from("failed to get canvas drawing context"))?
+            .dyn_into()?;
+
+        Ok(Self { canvas, context })
+    }
+
+    pub fn plot(&self, min: f32, max: f32, data: &[f32]) {
+        let width = self.canvas.width();
+        let height = self.canvas.height();
+        let fwidth = f64::from(width);
+        let fheight = f64::from(height);
+
+        self.context.set_fill_style_str("#000000");
+        self.context.fill_rect(0.0, 0.0, fwidth, fheight);
+
+        let step_width = fwidth / (data.len() as f64);
+        let mut offset_x = 0.0;
+
+        self.context.set_stroke_style_str("#ffffff");
+        self.context.begin_path();
+        self.context.move_to(0.0, fheight * 0.5);
+
+        for sample in data {
+            let normalized = ((sample - min) / (max - min)) as f64;
+
+            self.context.line_to(offset_x, fheight * normalized);
+            offset_x = offset_x + step_width;
+        }
+
+        self.context.stroke();
+    }
+}
+
 pub struct AudioVisualizer {
     canvas_freq: HtmlCanvasElement,
     canvas_time: HtmlCanvasElement,
     analyzer: AnalyserNode,
     freq_data: Vec<f32>,
     time_data: Vec<f32>,
-    plotter_freq: Plotter,
-    plotter_time: Plotter,
+    plotter_freq: BarPlotter,
+    plotter_time: LinePlotter,
 }
 
 impl AudioVisualizer {
@@ -72,8 +113,6 @@ impl AudioVisualizer {
         canvas_time: HtmlCanvasElement,
     ) -> Result<Self, JsValue> {
         let analyzer = audio_context.create_analyser()?;
-
-        log::info!("AAAAAA");
         analyzer.set_fft_size(128);
 
         let num_freq_bins = analyzer.frequency_bin_count();
@@ -82,8 +121,8 @@ impl AudioVisualizer {
         let freq_data = vec![0.0; num_freq_bins as usize];
         let time_data = vec![0.0; num_fft_data as usize];
 
-        let plotter_freq = Plotter::new(canvas_freq.clone())?;
-        let plotter_time = Plotter::new(canvas_time.clone())?;
+        let plotter_freq = BarPlotter::new(canvas_freq.clone())?;
+        let plotter_time = LinePlotter::new(canvas_time.clone())?;
 
         info!("data len {}", freq_data.len());
         info!("data len f64 {}", freq_data.len() as f64);
@@ -99,39 +138,18 @@ impl AudioVisualizer {
         })
     }
 
-    fn resize_if_needed(&mut self) {
-        let num_freq_bins = self.analyzer.frequency_bin_count();
-        let num_fft_data = self.analyzer.fft_size();
-
-        if (num_freq_bins as usize) != self.freq_data.len() {
-            info!("resize to {}", num_freq_bins);
-            self.freq_data = vec![0.0; num_freq_bins as usize];
-        }
-
-        if (num_fft_data as usize) != self.time_data.len() {
-            info!("resize to {}", num_fft_data);
-            self.time_data = vec![0.0; num_fft_data as usize];
-        }
-    }
-
     pub fn redraw(&mut self) {
-        self.resize_if_needed();
-
         // get data
+        self.analyzer.get_float_frequency_data(&mut self.freq_data);
         self.analyzer
-            .get_float_frequency_data(&mut self.freq_data[..]);
-        self.analyzer
-            .get_float_time_domain_data(&mut self.freq_data[..]);
+            .get_float_time_domain_data(&mut self.time_data);
 
         let min_db = self.analyzer.min_decibels();
         let max_db = self.analyzer.max_decibels();
 
-        log::info!("min db = {min_db}; max db = {max_db}");
-
         self.plotter_freq
             .plot(min_db as f32, max_db as f32, &self.freq_data);
 
-        self.plotter_time
-            .plot(min_db as f32, max_db as f32, &self.time_data);
+        self.plotter_time.plot(-1.0, 1.0, &self.time_data);
     }
 }
