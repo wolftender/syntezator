@@ -53,19 +53,47 @@ impl BarPlotter {
 pub struct LinePlotter {
     canvas: HtmlCanvasElement,
     context: CanvasRenderingContext2d,
+    first: usize,
+    fill: usize,
+    buffer: Vec<f32>,
 }
 
 impl LinePlotter {
-    pub fn new(canvas: HtmlCanvasElement) -> Result<Self, JsValue> {
+    pub fn new(canvas: HtmlCanvasElement, num_samples: usize) -> Result<Self, JsValue> {
         let context = canvas
             .get_context("2d")?
             .ok_or(JsValue::from("failed to get canvas drawing context"))?
             .dyn_into()?;
 
-        Ok(Self { canvas, context })
+        let buffer = vec![0.0; num_samples];
+
+        Ok(Self {
+            canvas,
+            context,
+            first: 0,
+            fill: 0,
+            buffer,
+        })
     }
 
-    pub fn plot(&self, min: f32, max: f32, data: &[f32]) {
+    fn internal_append(&mut self, data: &[f32]) {
+        // append data to the internal circular buffer
+        let capacity = self.buffer.len();
+        for sample in data {
+            if self.fill < capacity {
+                let idx = (self.first + self.fill) % capacity;
+                self.buffer[idx] = *sample;
+                self.fill = self.fill + 1;
+            } else {
+                self.buffer[self.first] = *sample;
+                self.first = (self.first + 1) % capacity;
+            }
+        }
+    }
+
+    pub fn plot(&mut self, min: f32, max: f32, data: &[f32]) {
+        self.internal_append(data);
+
         let width = self.canvas.width();
         let height = self.canvas.height();
         let fwidth = f64::from(width);
@@ -74,14 +102,15 @@ impl LinePlotter {
         self.context.set_fill_style_str("#000000");
         self.context.fill_rect(0.0, 0.0, fwidth, fheight);
 
-        let step_width = fwidth / (data.len() as f64);
+        let step_width = fwidth / (self.fill as f64);
         let mut offset_x = 0.0;
 
         self.context.set_stroke_style_str("#ffffff");
         self.context.begin_path();
         self.context.move_to(0.0, fheight * 0.5);
 
-        for sample in data {
+        for idx in 0..self.fill {
+            let sample = self.buffer[(self.first + idx) % self.buffer.len()];
             let normalized = ((sample - min) / (max - min)) as f64;
 
             self.context.line_to(offset_x, fheight * normalized);
@@ -122,7 +151,7 @@ impl AudioVisualizer {
         let time_data = vec![0.0; num_fft_data as usize];
 
         let plotter_freq = BarPlotter::new(canvas_freq.clone())?;
-        let plotter_time = LinePlotter::new(canvas_time.clone())?;
+        let plotter_time = LinePlotter::new(canvas_time.clone(), 4096)?;
 
         info!("data len {}", freq_data.len());
         info!("data len f64 {}", freq_data.len() as f64);
